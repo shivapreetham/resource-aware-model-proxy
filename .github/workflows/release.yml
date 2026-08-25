@@ -1,0 +1,76 @@
+name: Release
+
+# Tag a version and everything else happens:
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Publishing uses PyPI Trusted Publishing (OIDC), so there is no API token to
+# store or leak. One-time setup on PyPI: Your projects -> Publishing -> add a
+# GitHub publisher for this repo with workflow name "release.yml" and
+# environment "pypi".
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify the tag matches the packaged version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VER=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::tag v$TAG does not match pyproject version $VER"
+            exit 1
+          fi
+          echo "releasing $VER"
+
+      - run: pip install build && python -m build
+
+      - name: Install the wheel in a clean env and smoke-test it
+        run: |
+          python -m venv /tmp/check
+          /tmp/check/bin/pip install --quiet dist/*.whl
+          /tmp/check/bin/ramp --version
+          /tmp/check/bin/ramp --help > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write        # required for Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

@@ -1,36 +1,47 @@
-# Real-model ladder served through a local Ollama server (signed runtime -
-# works even where Windows Smart App Control blocks unsigned llama-server
-# builds). Tiers reference Ollama model tags; RAMP loads/unloads them and
-# rewrites the request's "model" field to the active tier.
+# A real-model ladder served through a local Ollama server.
+#
+# You usually don't need this file at all - `ramp` with no arguments detects
+# your installed Ollama models and builds a ladder itself, and `ramp init`
+# writes the result out if you'd rather start from something concrete. Keep
+# reading if you want to hand-tune.
+#
+# Pull the models first:
+#   ollama pull qwen2.5:1.5b
+#   ollama pull qwen2.5:0.5b
+#
+# Then:  ramp run -c examples/ramp.ollama.yaml
 
 listen:
   host: 127.0.0.1
-  port: 8091
+  port: 8090
 
 backend: ollama
-ollama_bin: C:/Users/Shivapreetham/AppData/Local/Programs/Ollama/ollama.exe
-ollama_url: http://127.0.0.1:11434
+# ollama_bin: ollama                      # only if it isn't on your PATH
+# ollama_url: http://127.0.0.1:11434      # only if Ollama isn't on the default port
 
-poll_interval_s: 2
-safety_margin_mb: 2048
-vram_safety_margin_mb: 512    # enforced because an NVIDIA GPU is present
-disk_min_free_mb: 5120        # below this free disk, upgrades are blocked
-drain_timeout_s: 30
-startup_timeout_s: 180
+poll_interval_s: 3
+safety_margin_mb: 2048          # free RAM to preserve for the rest of the system
+vram_safety_margin_mb: 512      # free VRAM to preserve (NVIDIA only, via nvidia-smi)
+disk_min_free_mb: 5120          # below this free disk, upgrades are blocked
+min_swap_interval_s: 60         # hard floor between upgrades, to bound churn
 
 hysteresis:
   downgrade_after_samples: 2
-  upgrade_after_s: 20
-  upgrade_extra_mb: 512
+  upgrade_after_s: 120
+  upgrade_extra_mb: 1024
   critical_free_mb: 1024
 
+# est_ram_mb / est_vram_mb are ESTIMATES, and every decision depends on them.
+# Underestimating is dangerous - it lets RAMP load something that doesn't fit -
+# so round up. To calibrate: pin the tier (POST /ramp/pin/<name>), watch real
+# usage, round up. See docs/MONITORING.md.
 tiers:
   - name: qwen2.5-1.5b
-    model: ramp-qwen-1.5b
+    model: qwen2.5:1.5b
     est_ram_mb: 2200
-    est_vram_mb: 1800     # Ollama offloads to the GPU when it can
+    est_vram_mb: 1800           # Ollama offloads to the GPU when it can
 
   - name: qwen2.5-0.5b
-    model: ramp-qwen-0.5b
+    model: qwen2.5:0.5b
     est_ram_mb: 1000
     est_vram_mb: 800

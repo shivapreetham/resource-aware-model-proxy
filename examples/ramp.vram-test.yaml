@@ -1,28 +1,34 @@
 # VRAM-pressure isolation test.
 #
-# The RAM margin is deliberately low and the VRAM margin deliberately high,
-# so that GPU pressure alone triggers the switch while system RAM stays
-# healthy. The fallback tier declares est_vram_mb: 0 (CPU-only), so it
-# remains available no matter how full the GPU gets.
+# Proves the GPU code path on its own. The RAM margin is deliberately low and
+# the VRAM margin deliberately high, so that GPU pressure alone triggers the
+# downgrade while system RAM stays healthy. The fallback tier declares
+# est_vram_mb: 0 (CPU-only), so it stays available no matter how full the GPU
+# gets - which is exactly where a GPU-starved ladder should land.
 #
-# Reproduce:
-#   ramp -c examples/ramp.vram-test.yaml
-#   ollama run llama3.1 ""        # occupy ~5.4 GB of VRAM
-#   curl http://127.0.0.1:8091/ramp/status
+# Reproduce (needs an NVIDIA GPU and nvidia-smi):
+#   ollama pull qwen2.5:1.5b && ollama pull qwen2.5:0.5b
+#   ramp run -c examples/ramp.vram-test.yaml
+#
+#   # in another terminal, occupy the GPU with something else:
+#   ollama run llama3.1 ""
+#   ramp status        # -> falls to the CPU tier, reason "vram-pressure"
+#
+#   # release it and watch it come back:
+#   curl http://127.0.0.1:11434/api/generate -d '{"model":"llama3.1","keep_alive":0}'
 
 listen:
   host: 127.0.0.1
-  port: 8091
+  port: 8090
 
 backend: ollama
-ollama_bin: C:/Users/Shivapreetham/AppData/Local/Programs/Ollama/ollama.exe
-ollama_url: http://127.0.0.1:11434
 
 poll_interval_s: 2
 safety_margin_mb: 1200          # low: RAM should not be the trigger here
 vram_safety_margin_mb: 3000     # high: GPU pressure trips first
 vram_upgrade_extra_mb: 256
 disk_min_free_mb: 5120
+min_swap_interval_s: 0          # this is a test; don't rate-limit the recovery
 
 hysteresis:
   downgrade_after_samples: 2
@@ -32,11 +38,11 @@ hysteresis:
 
 tiers:
   - name: qwen2.5-1.5b-gpu
-    model: ramp-qwen-1.5b
+    model: qwen2.5:1.5b
     est_ram_mb: 2200
     est_vram_mb: 1800
 
   - name: qwen2.5-0.5b-cpu
-    model: ramp-qwen-0.5b
+    model: qwen2.5:0.5b
     est_ram_mb: 1000
     est_vram_mb: 0              # CPU-only fallback: never VRAM-constrained

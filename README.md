@@ -109,6 +109,22 @@ pipx install ramp-llm   # or install it properly
 pip install ramp-llm    # or into the current environment
 ```
 
+<details>
+<summary>Docker</summary>
+
+```bash
+docker build -t ramp .
+docker run --rm -p 8090:8090 \
+  --add-host=host.docker.internal:host-gateway \
+  -e RAMP_OLLAMA_URL=http://host.docker.internal:11434 \
+  ramp
+```
+
+Add `--gpus all` (with the NVIDIA container toolkit) for VRAM awareness. Note
+that inside a container RAMP reads the *container's* memory limit — which is
+usually what you want, but means `--memory` shapes its decisions.
+</details>
+
 Then:
 
 ```bash

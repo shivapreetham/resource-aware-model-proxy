@@ -29,6 +29,7 @@ from .monitor import ResourceMonitor
 from .server import create_app
 
 DEFAULT_CONFIG_NAMES = ("ramp.yaml", "ramp.yml")
+DEFAULT_PORT = 8090
 
 # ANSI colour, but only when we're attached to a terminal that wants it.
 _COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
@@ -60,7 +61,7 @@ def cmd_doctor(args) -> int:
     checks = run_checks(
         config_path=args.config or _find_default_config(),
         ollama_url=args.ollama_url,
-        port=args.port,
+        port=args.port or DEFAULT_PORT,
     )
     width = max(len(c.name) for c in checks)
     for c in checks:
@@ -86,12 +87,23 @@ def _resolve_config(args) -> Config:
     path = args.config or _find_default_config()
     if path:
         logging.getLogger("ramp").info("using config %s", path)
-        return Config.load(path)
+        cfg = Config.load(path)
+    else:
+        raw = autodetect(
+            ollama_url=args.ollama_url, port=args.port or DEFAULT_PORT
+        )
+        print(describe(raw))
+        print("\nTip: 'ramp init' writes this out as ramp.yaml so you can tune it.\n")
+        cfg = Config.from_dict(raw)
 
-    raw = autodetect(ollama_url=args.ollama_url, port=args.port)
-    print(describe(raw))
-    print("\nTip: 'ramp init' writes this out as ramp.yaml so you can tune it.\n")
-    return Config.from_dict(raw)
+    # CLI flags win over whatever the config says. --host matters for
+    # containers and LAN use: bound to 127.0.0.1 inside Docker, the port is
+    # unreachable from the host even with -p.
+    if args.host:
+        cfg.listen_host = args.host
+    if args.port:
+        cfg.listen_port = args.port
+    return cfg
 
 
 def cmd_run(args) -> int:
@@ -126,7 +138,7 @@ def cmd_run(args) -> int:
 
 def cmd_init(args) -> int:
     try:
-        raw = autodetect(ollama_url=args.ollama_url, port=args.port)
+        raw = autodetect(ollama_url=args.ollama_url, port=args.port or DEFAULT_PORT)
     except AutoConfigError as e:
         print(f"{_c('Could not auto-detect:', '31')} {e}", file=sys.stderr)
         return 1
@@ -219,12 +231,14 @@ def build_parser() -> argparse.ArgumentParser:
     def common(sp):
         sp.add_argument("--ollama-url", default="http://127.0.0.1:11434",
                         help="Ollama server to inspect (default: %(default)s)")
-        sp.add_argument("--port", type=int, default=8090,
-                        help="port RAMP listens on (default: %(default)s)")
+        sp.add_argument("--port", type=int, default=None,
+                        help=f"port RAMP listens on (default: {DEFAULT_PORT})")
         return sp
 
     run = common(sub.add_parser("run", help="start the daemon"))
     run.add_argument("--config", "-c", help="config file (default: ./ramp.yaml, else auto-detect)")
+    run.add_argument("--host", default=None,
+                     help="address to bind (default: 127.0.0.1; use 0.0.0.0 in containers)")
     run.add_argument("--log-level", default="info")
     run.set_defaults(func=cmd_run)
 
