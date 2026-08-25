@@ -1,3 +1,4 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
@@ -5,8 +6,12 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+
+# Local assistant context (kept out of the published repo)
+CLAUDE.md
+
+# Runtime / local assets
 ramp-backend.log
 .llama/
 models/
-dist/
-*.egg-info/
+ramp.yaml
