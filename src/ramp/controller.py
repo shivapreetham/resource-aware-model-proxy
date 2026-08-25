@@ -8,13 +8,14 @@ progress the proxy holds incoming requests until the new tier is healthy.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections import deque
-from typing import Optional
 
 from .backend import BackendError, ProcessBackend
 from .config import Config
+from .metrics import Metrics
 from .monitor import ResourceMonitor, ResourceSample
 from .policy import Policy
 
@@ -27,20 +28,21 @@ class Controller:
         self.backend = backend
         self.monitor = monitor
         self.policy = Policy(cfg)
+        self.metrics = Metrics()
 
         self.ready = asyncio.Event()
         # Serializes tier transitions (the poll loop and the pin endpoint
         # can both request a switch).
         self._swap_lock = asyncio.Lock()
         self.inflight = 0
-        self.current: Optional[int] = None
-        self.pinned: Optional[str] = None
-        self.last_sample: Optional[ResourceSample] = None
+        self.current: int | None = None
+        self.pinned: str | None = None
+        self.last_sample: ResourceSample | None = None
         # Why the policy last chose to stay/switch - surfaced in /ramp/status
         # so it's visible *why* RAMP is holding a tier (e.g. "disk-low").
         self.last_decision: str = "init"
         self.events: deque[dict] = deque(maxlen=100)
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     # -- lifecycle -------------------------------------------------------
 
@@ -60,10 +62,8 @@ class Controller:
     async def close(self) -> None:
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
             self._task = None
         self.ready.clear()
         await self.backend.close()
@@ -106,6 +106,8 @@ class Controller:
             return
 
         decision = self.policy.evaluate(self.current, sample, now)
+        if decision.reason == "cooldown" and self.last_decision != "cooldown":
+            self.metrics.suppressed()
         self.last_decision = decision.reason
         if decision.action == "switch" and decision.target is not None:
             await self._activate(decision.target, reason=decision.reason)
@@ -120,14 +122,19 @@ class Controller:
         while self.inflight > 0 and loop.time() < deadline:
             await asyncio.sleep(0.05)
         if self.inflight > 0:
-            log.warning("drain timeout with %d request(s) in flight; swapping anyway", self.inflight)
+            log.warning(
+                "drain timeout with %d request(s) in flight; swapping anyway",
+                self.inflight,
+            )
 
     async def _activate(self, idx: int, reason: str = "") -> None:
         async with self._swap_lock:
             old = self.tier_name
+            t0 = time.monotonic()
             self.ready.clear()
             await self._drain()
             await self.backend.stop()
+            self.metrics.enter_tier(None)
             # Try the target tier; on startup failure fall through to smaller ones.
             for candidate in range(idx, len(self.cfg.tiers)):
                 tier = self.cfg.tiers[candidate]
@@ -135,13 +142,17 @@ class Controller:
                     await self.backend.start(tier)
                 except BackendError as e:
                     log.error("failed to start tier %r: %s", tier.name, e)
+                    self.metrics.swap_failed()
                     continue
                 self.current = candidate
-                self.policy.reset()
+                self.policy.reset(time.monotonic())
                 self.ready.set()
+                self.metrics.swap_done(reason or "unspecified", time.monotonic() - t0)
+                self.metrics.enter_tier(tier.name)
                 self._record("switch", old, tier.name, reason)
                 return
             self.current = None
+            self.metrics.unload_done()
             self._record("unload", old, None, f"{reason} (all tiers failed to start)")
             log.error("all tiers from index %d failed to start; nothing loaded", idx)
 
@@ -152,7 +163,9 @@ class Controller:
             await self._drain()
             await self.backend.stop()
             self.current = None
-            self.policy.reset()
+            self.policy.reset(time.monotonic())
+            self.metrics.unload_done()
+            self.metrics.enter_tier(None)
             self._record("unload", old, None, reason)
             log.warning("model unloaded (%s)", reason)
 
@@ -172,12 +185,12 @@ class Controller:
     # -- introspection ---------------------------------------------------
 
     @property
-    def tier_name(self) -> Optional[str]:
+    def tier_name(self) -> str | None:
         if self.current is None:
             return None
         return self.cfg.tiers[self.current].name
 
-    def _record(self, event: str, frm: Optional[str], to: Optional[str], reason: str) -> None:
+    def _record(self, event: str, frm: str | None, to: str | None, reason: str) -> None:
         self.events.append(
             {"ts": time.time(), "event": event, "from": frm, "to": to, "reason": reason}
         )
@@ -228,5 +241,11 @@ class Controller:
                 }
                 for i, t in enumerate(self.cfg.tiers)
             ],
+            "metrics": self.metrics.snapshot(),
             "events": list(self.events),
         }
+
+    def prometheus(self) -> str:
+        return self.metrics.prometheus(
+            self.tier_name, [t.name for t in self.cfg.tiers]
+        )

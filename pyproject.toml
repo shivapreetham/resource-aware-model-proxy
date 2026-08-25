@@ -5,12 +5,36 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ramp-llm"
 version = "0.1.0"
-description = "RAMP: RAM-Aware Model Proxy - an elastic local LLM daemon that auto-calibrates model size to available memory"
+description = "RAMP: Resource-Aware Model Proxy - an elastic local LLM daemon that auto-calibrates model size to available RAM, VRAM and disk"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Shivapreetham" }]
-keywords = ["llm", "local", "llama.cpp", "elastic", "quantization", "proxy"]
+keywords = [
+    "llm", "local-llm", "llama.cpp", "ollama", "elastic", "quantization",
+    "proxy", "openai-api", "memory-management", "inference",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Monitoring",
+    "Topic :: Internet :: Proxy Servers",
+]
+
+[project.urls]
+Homepage = "https://github.com/shivapreetham/ramp"
+Repository = "https://github.com/shivapreetham/ramp"
+Issues = "https://github.com/shivapreetham/ramp/issues"
+Changelog = "https://github.com/shivapreetham/ramp/blob/main/CHANGELOG.md"
+Concepts = "https://github.com/shivapreetham/ramp/blob/main/docs/CONCEPTS.md"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
@@ -27,6 +51,13 @@ ramp = "ramp.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

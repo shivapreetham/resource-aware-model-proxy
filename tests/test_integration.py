@@ -43,6 +43,7 @@ CFG = {
     "queue_timeout_s": 30,
     "startup_timeout_s": 60,
     "disk_min_free_mb": 5000,
+    "min_swap_interval_s": 0,   # these tests run on sub-second timings
     "hysteresis": {
         "downgrade_after_samples": 2,
         "upgrade_after_s": 0.3,
@@ -100,7 +101,7 @@ async def chat(client: httpx.AsyncClient, text="hello"):
 
 
 async def test_downgrade_then_upgrade(stack):
-    controller, monitor, client = stack
+    _controller, monitor, client = stack
 
     # Plenty of memory at startup: best tier loads.
     await wait_for_tier(client, "big")
@@ -130,7 +131,7 @@ async def test_downgrade_then_upgrade(stack):
 
 
 async def test_streaming_passthrough(stack):
-    controller, monitor, client = stack
+    _controller, _monitor, client = stack
     await wait_for_tier(client, "big")
 
     async with client.stream(
@@ -169,7 +170,7 @@ async def test_critical_pressure_unloads_and_recovers(stack):
 
 
 async def test_pin_overrides_policy(stack):
-    controller, monitor, client = stack
+    _controller, _monitor, client = stack
     await wait_for_tier(client, "big")
 
     r = await client.post("/ramp/pin/small")
@@ -182,6 +183,47 @@ async def test_pin_overrides_policy(stack):
 
     await client.delete("/ramp/pin")
     await wait_for_tier(client, "big")
+
+
+async def test_metrics_track_swaps_and_requests(stack):
+    _controller, monitor, client = stack
+    await wait_for_tier(client, "big")
+    await chat(client)
+
+    monitor.avail_mb = 600
+    await wait_for_tier(client, "small")
+    await chat(client)
+
+    m = (await client.get("/ramp/status")).json()["metrics"]
+    assert m["swaps_total"] >= 2                      # startup + downgrade
+    assert m["swaps_by_reason"]["memory-pressure"] >= 1
+    assert m["requests_total"] >= 2
+    assert m["mean_swap_s"] > 0
+    assert m["tier_seconds"]["big"] > 0
+    assert m["uptime_s"] > 0
+
+
+async def test_prometheus_endpoint(stack):
+    _controller, _monitor, client = stack
+    await wait_for_tier(client, "big")
+    await chat(client)
+
+    r = await client.get("/ramp/metrics")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain")
+    body = r.text
+    # Well-formed exposition: HELP/TYPE lines and labelled series.
+    assert "# HELP ramp_swaps_total" in body
+    assert "# TYPE ramp_swaps_total counter" in body
+    assert 'ramp_swaps_total{reason="startup"}' in body
+    assert 'ramp_tier_active{tier="big"} 1' in body
+    assert 'ramp_tier_active{tier="small"} 0' in body
+    assert "ramp_requests_total" in body
+    # Every non-comment line must be "name value".
+    for line in body.splitlines():
+        if line and not line.startswith("#"):
+            assert len(line.rsplit(" ", 1)) == 2, line
+            float(line.rsplit(" ", 1)[1])
 
 
 async def test_pin_unknown_tier_404(stack):
@@ -232,7 +274,7 @@ async def test_slow_swap_is_not_mistaken_for_a_crash():
 
 
 async def test_low_disk_blocks_upgrade(stack):
-    controller, monitor, client = stack
+    _controller, monitor, client = stack
     await wait_for_tier(client, "big")
 
     # Drop to the small tier via memory pressure.

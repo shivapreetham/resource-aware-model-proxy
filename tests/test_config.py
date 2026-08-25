@@ -2,7 +2,6 @@ import pytest
 
 from ramp.config import Config, ConfigError
 
-
 BASE = {
     "backend": "mock",
     "tiers": [

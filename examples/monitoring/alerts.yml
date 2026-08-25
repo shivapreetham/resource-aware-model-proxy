@@ -1,0 +1,58 @@
+# Alert rules for RAMP. The thresholds encode the failure modes that
+# actually matter for an elastic daemon - see docs/MONITORING.md.
+
+groups:
+  - name: ramp
+    rules:
+      # Churn: the daemon is spending its life loading models instead of
+      # answering. This is THE failure mode elastic serving can have.
+      - alert: RampThrashing
+        expr: sum(rate(ramp_swaps_total[15m])) * 3600 > 12
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAMP is swapping more than 12x/hour"
+          description: >
+            Sustained churn. Raise min_swap_interval_s or upgrade_after_s,
+            or widen the gap between tiers so small pressure changes don't
+            cross a boundary.
+
+      # Time lost to swapping, as a fraction of wall clock.
+      - alert: RampSwapOverheadHigh
+        expr: rate(ramp_swap_seconds_total[30m]) > 0.05
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 5% of wall-clock time spent swapping tiers"
+
+      # No model loaded: requests are being rejected outright.
+      - alert: RampServingNothing
+        expr: sum(ramp_tier_active) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RAMP has no tier loaded"
+          description: >
+            Resources stayed below even the smallest tier's footprint, or
+            every tier failed to start. Check ramp_swaps_failed_total.
+
+      - alert: RampRejectingRequests
+        expr: rate(ramp_requests_rejected_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAMP is returning 503s (no model available in time)"
+
+      # Backends failing to start - usually a bad model path or a tier whose
+      # footprint estimate is badly wrong.
+      - alert: RampTierStartFailures
+        expr: increase(ramp_swaps_failed_total[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tiers are failing to start"

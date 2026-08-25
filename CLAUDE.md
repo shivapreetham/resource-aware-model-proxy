@@ -1,6 +1,6 @@
 # RAMP — context for Claude Code
 
-RAMP (RAM-Aware Model Proxy) is an **elastic local LLM daemon**: one
+RAMP (Resource-Aware Model Proxy) is an **elastic local LLM daemon**: one
 OpenAI-compatible endpoint that continuously watches system resources and
 transparently moves the loaded model up and down a quality ladder of "tiers"
 (model size / quantization / context length).
@@ -39,15 +39,19 @@ code lives in the parent directory and is **not** part of RAMP.
 ## Commands
 
 ```bash
-.venv\Scripts\python.exe -m pytest -q                              # all tests (31)
+.venv\Scripts\python.exe -m pytest -q                              # all tests (36)
+.venv\Scripts\python.exe -m ruff check src tests scripts           # lint (must be clean)
 .venv\Scripts\python.exe -m pytest tests/test_policy.py -q         # policy units only
 .venv\Scripts\python.exe -m ramp -c examples\ramp.mock.yaml        # demo, no models
 .venv\Scripts\python.exe -m ramp -c examples\ramp.ollama.yaml      # real models
 .venv\Scripts\python.exe scripts\stress_ram.py --mb 4000 --hold-s 60
 ```
 
-Status while running: `curl http://127.0.0.1:8090/ramp/status` (mock, port 8090)
-or `:8091` (the ollama/vram example configs).
+While running: `curl http://127.0.0.1:8090/ramp/status` (mock, port 8090) or
+`:8091` (ollama/vram example configs); `/ramp/metrics` for Prometheus text.
+
+CI (`.github/workflows/ci.yml`) runs pytest on Linux/macOS/Windows × Python
+3.10–3.13 plus `ruff check`. Keep both green.
 
 ## Layout
 
@@ -58,6 +62,7 @@ or `:8091` (the ollama/vram example configs).
 | `src/ramp/controller.py` | Executes decisions: drain → stop → start → gate. Crash recovery, event log, pin/unpin. |
 | `src/ramp/backend.py` | Child-process/model lifecycle: `LlamaServerBackend`, `OllamaBackend`, `MockBackend`. |
 | `src/ramp/server.py` | FastAPI: `/v1/*` passthrough (SSE-safe) + `/ramp/*` control API. |
+| `src/ramp/metrics.py` | Swap-rate / occupancy / request telemetry; Prometheus exposition. |
 | `src/ramp/mock_llm.py` | Fake OpenAI server used by `MockBackend` — enables full E2E tests with no models. |
 | `examples/*.yaml` | `ramp.mock.yaml` (demo), `ramp.ollama.yaml` (real), `ramp.yaml` (llama.cpp), `ramp.vram-test.yaml` (isolates VRAM pressure). |
 
@@ -78,6 +83,8 @@ or `:8091` (the ollama/vram example configs).
    `asyncio.Event`, not an error response.
 6. **Budgets are post-swap:** `available + current_tier_footprint`. Comparing
    against currently-free memory alone makes upgrades impossible.
+7. **The cooldown (`min_swap_interval_s`) applies to upgrades only.** Critical
+   pressure bypasses it. Never let it delay a downgrade.
 
 ## State of the work
 
@@ -89,13 +96,19 @@ or `:8091` (the ollama/vram example configs).
 - Disk gate blocking an upgrade (`last_decision: disk-low`).
 - SSE streaming passthrough; pin/unpin.
 
+**Measured swap costs** (Ollama, same machine): cold load 16.5 s; warm
+unload+reload 1.9 s; full downgrade or upgrade 1.9 s; complete down-up cycle
+3.6 s. Steady-state swaps are cheap because the OS page-caches the GGUF.
+
 **Not verified live:** the `llama` backend (blocked by Smart App Control), the
 disk gate's *release* path (integration-tested only — filling a 670 GB drive
-wasn't practical), multi-GPU, non-NVIDIA GPUs.
+wasn't practical), multi-GPU, non-NVIDIA GPUs, and **swap frequency over a
+real multi-hour workload** (that's what `/ramp/metrics` now exists to answer —
+run it for a day and read `swaps_per_hour`).
 
-**Tests: 31, all passing.** Unit tests cover the policy exhaustively;
-integration tests run the real daemon against mock child processes with
-scripted resource readings.
+**Tests: 36, all passing; ruff clean.** Unit tests cover the policy
+exhaustively; integration tests run the real daemon against mock child
+processes with scripted resource readings.
 
 ## Roadmap
 

@@ -9,6 +9,7 @@ committed), holds for --hold-s seconds, then releases and exits. Watch
 from __future__ import annotations
 
 import argparse
+import contextlib
 import time
 
 CHUNK_MB = 256
@@ -32,10 +33,8 @@ def main() -> None:
         allocated += size
         print(f"  {allocated} / {args.mb} MB", end="\r")
     print(f"\nholding {allocated} MB for {args.hold_s}s ... (Ctrl+C to release early)")
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         time.sleep(args.hold_s)
-    except KeyboardInterrupt:
-        pass
     chunks.clear()
     print("released.")
 

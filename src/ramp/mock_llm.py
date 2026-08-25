@@ -30,7 +30,10 @@ def build_app(name: str) -> FastAPI:
 
     @app.get("/v1/models")
     async def models():
-        return {"object": "list", "data": [{"id": name, "object": "model", "owned_by": "ramp-mock"}]}
+        return {
+            "object": "list",
+            "data": [{"id": name, "object": "model", "owned_by": "ramp-mock"}],
+        }
 
     @app.post("/v1/chat/completions")
     async def chat(request: Request):
@@ -52,10 +55,28 @@ def build_app(name: str) -> FastAPI:
                     "created": created,
                     "model": name,
                 }
-                first = {**base, "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}
+                first = {
+                    **base,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"role": "assistant"},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
                 yield f"data: {json.dumps(first)}\n\n"
                 for word in text.split(" "):
-                    chunk = {**base, "choices": [{"index": 0, "delta": {"content": word + " "}, "finish_reason": None}]}
+                    chunk = {
+                        **base,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": word + " "},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
                     yield f"data: {json.dumps(chunk)}\n\n"
                     await asyncio.sleep(0.02)
                 last = {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}

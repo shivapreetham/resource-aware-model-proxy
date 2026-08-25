@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 import psutil
 
@@ -51,8 +50,8 @@ class DiskSample:
 @dataclass
 class ResourceSample:
     ram: MemorySample
-    gpu: Optional[GpuSample]
-    disk: Optional[DiskSample]
+    gpu: GpuSample | None
+    disk: DiskSample | None
     ts: float
 
 
@@ -65,12 +64,12 @@ class ResourceMonitor:
     ) -> None:
         self.alpha = ema_alpha
         self.disk_path = disk_path
-        self._ram_ema: Optional[float] = None
-        self._vram_ema: Optional[float] = None
+        self._ram_ema: float | None = None
+        self._vram_ema: float | None = None
         self._nvidia_smi = shutil.which(nvidia_smi)
         self._gpu_broken = False
 
-    def _ema(self, prev: Optional[float], raw: float) -> float:
+    def _ema(self, prev: float | None, raw: float) -> float:
         if prev is None:
             return raw
         return self.alpha * raw + (1 - self.alpha) * prev
@@ -86,7 +85,7 @@ class ResourceMonitor:
             percent=vm.percent,
         )
 
-    def _sample_gpu(self) -> Optional[GpuSample]:
+    def _sample_gpu(self) -> GpuSample | None:
         if self._nvidia_smi is None or self._gpu_broken:
             return None
         try:
@@ -124,7 +123,7 @@ class ResourceMonitor:
             self._gpu_broken = True
             return None
 
-    def _sample_disk(self) -> Optional[DiskSample]:
+    def _sample_disk(self) -> DiskSample | None:
         try:
             usage = shutil.disk_usage(self.disk_path)
             return DiskSample(

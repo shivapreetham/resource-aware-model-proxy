@@ -65,6 +65,10 @@ class Config:
     # free disk, so this gates rather than downgrades). Also surfaced in
     # status so clients can warn.
     disk_min_free_mb: float = 5120.0
+    # Hard floor on how often an *upgrade* may occur, independent of
+    # hysteresis - a rate limiter against churn. Downgrades are never
+    # delayed: a late downgrade risks OOM, a late upgrade costs nothing.
+    min_swap_interval_s: float = 60.0
     # Path whose drive is watched for free space (default: working dir).
     disk_path: str = "."
     # How long to wait for in-flight requests before swapping anyway.
@@ -82,7 +86,7 @@ class Config:
     ema_alpha: float = 0.4
 
     @staticmethod
-    def from_dict(raw: dict[str, Any]) -> "Config":
+    def from_dict(raw: dict[str, Any]) -> Config:
         if not isinstance(raw, dict):
             raise ConfigError("config root must be a mapping")
 
@@ -102,9 +106,15 @@ class Config:
             if not isinstance(est, (int, float)) or est <= 0:
                 raise ConfigError(f"tier {t.get('name')!r}: est_ram_mb must be a positive number")
             if backend == "llama" and not t.get("model"):
-                raise ConfigError(f"tier {t['name']!r}: 'model' (gguf path) is required for the llama backend")
+                raise ConfigError(
+                    f"tier {t['name']!r}: 'model' (gguf path) is required "
+                    "for the llama backend"
+                )
             if backend == "ollama" and not t.get("model"):
-                raise ConfigError(f"tier {t['name']!r}: 'model' (ollama model tag) is required for the ollama backend")
+                raise ConfigError(
+                    f"tier {t['name']!r}: 'model' (ollama model tag) is required "
+                    "for the ollama backend"
+                )
             est_vram = t.get("est_vram_mb", 0.0)
             if not isinstance(est_vram, (int, float)) or est_vram < 0:
                 raise ConfigError(f"tier {t['name']!r}: est_vram_mb must be a non-negative number")
@@ -147,6 +157,7 @@ class Config:
             vram_safety_margin_mb=float(raw.get("vram_safety_margin_mb", 512.0)),
             vram_upgrade_extra_mb=float(raw.get("vram_upgrade_extra_mb", 256.0)),
             disk_min_free_mb=float(raw.get("disk_min_free_mb", 5120.0)),
+            min_swap_interval_s=float(raw.get("min_swap_interval_s", 60.0)),
             disk_path=str(raw.get("disk_path", ".")),
             drain_timeout_s=float(raw.get("drain_timeout_s", 30.0)),
             queue_timeout_s=float(raw.get("queue_timeout_s", 120.0)),
@@ -159,7 +170,7 @@ class Config:
         )
 
     @staticmethod
-    def load(path: str | Path) -> "Config":
-        with open(path, "r", encoding="utf-8") as f:
+    def load(path: str | Path) -> Config:
+        with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
         return Config.from_dict(raw)

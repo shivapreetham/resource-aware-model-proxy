@@ -1,16 +1,23 @@
-# RAMP — RAM-Aware Model Proxy
+# RAMP — Resource-Aware Model Proxy
 
-An **elastic local LLM daemon**. RAMP exposes one OpenAI-compatible endpoint,
-continuously watches your machine's available memory, and transparently moves
-the loaded model up and down a *quality ladder* (model size / quantization /
-context length):
+**Your local LLM should get out of the way when you need the RAM back.**
+
+[![CI](https://github.com/shivapreetham/ramp/actions/workflows/ci.yml/badge.svg)](https://github.com/shivapreetham/ramp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+
+RAMP is an elastic daemon that sits in front of llama.cpp or Ollama. It
+watches RAM, VRAM, and disk continuously, and moves the loaded model up and
+down a *quality ladder* as your machine gets busy and quiets down:
 
 - You open Chrome with 40 tabs → RAMP swaps your 7B model for a 3B one.
 - You close them → after a stable recovery window, the 7B comes back.
 - Your assistant never dies with an OOM, and you never reconfigure anything.
 
-Any client that speaks the OpenAI API — Open-LLM-VTuber, Khoj, SillyTavern,
-LangChain, `curl` — just points its `base_url` at RAMP and works unchanged.
+It speaks the OpenAI API, so **Open-LLM-VTuber, Khoj, SillyTavern, LangChain,
+Continue, or `curl` just point `base_url` at RAMP and work unchanged** — no
+code, no client plugin, nothing to adopt. Swaps cost ~2 seconds warm
+(measured), and in-flight requests are drained rather than dropped.
 
 > **New here?** [docs/CONCEPTS.md](docs/CONCEPTS.md) explains what's actually
 > going on: what consumes memory when an LLM runs, why VRAM pressure silently
@@ -19,16 +26,21 @@ LangChain, `curl` — just points its `base_url` at RAMP and works unchanged.
 
 ## Why this doesn't already exist
 
+Everyone running a local model has made the same bad trade: pick a big model
+and let the machine choke, or pick a small one and pay for the worst case all
+day. The tools make you choose **once, up front, forever**.
+
 - **Ollama / LM Studio** pick a quantization *once*, at download/load time.
   Nothing adapts after that ([ollama#14674](https://github.com/ollama/ollama/issues/14674)).
 - **[llama-swap](https://github.com/mostlygeek/llama-swap)** swaps models based
-  on *which model the client requests* — the system's memory state is never
+  on *which model the client requests* — the system's resource state is never
   consulted.
 - **FlexQuant / LSAQ / Voltron / Any-Precision LLM** validated elastic
   execution academically; none ship as a usable daemon.
 
-RAMP is the missing controller: policy-driven, hysteresis-damped, and
-backend-agnostic.
+RAMP is the missing controller: policy-driven, hysteresis-damped,
+backend-agnostic, and measured — it reports its own swap rate so you can prove
+it isn't thrashing.
 
 ## Architecture
 
@@ -121,9 +133,33 @@ API. Import your own GGUFs with `ollama create <tag> -f Modelfile`
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /ramp/status` | Current tier, RAM/GPU/disk readings, `last_decision` (why RAMP is holding — e.g. `disk-low`, `upgrade-pending`), tier ladder, and event log. |
+| `GET /ramp/status` | Current tier, RAM/GPU/disk readings, `last_decision` (why RAMP is holding — e.g. `disk-low`, `upgrade-pending`), tier ladder, metrics, and event log. |
+| `GET /ramp/metrics` | Prometheus text format for scraping. |
 | `POST /ramp/pin/{name}` | Force a tier; disables auto-calibration. |
 | `DELETE /ramp/pin` | Resume auto-calibration. |
+
+## Monitoring
+
+An elastic daemon lives or dies on one number: **how often it actually
+swaps.** RAMP measures its own behaviour rather than asking you to trust it —
+swap rate, time lost to swapping, per-tier occupancy, cooldown suppressions,
+and requests that waited or were rejected.
+
+```bash
+curl -s http://127.0.0.1:8090/ramp/metrics
+prometheus --config.file=examples/monitoring/prometheus.yml
+```
+
+```promql
+sum(rate(ramp_swaps_total[15m])) * 3600      # swaps per hour — the headline
+rate(ramp_swap_seconds_total[30m])           # fraction of time spent swapping
+rate(ramp_tier_seconds_total[1h])            # is your ladder calibrated?
+```
+
+Under 2 swaps/hour means RAMP is invisible, which is the goal; above ~12 means
+churn worth tuning. [docs/MONITORING.md](docs/MONITORING.md) explains each
+number, what to alert on, and how to tune from what you see. Alert rules ship
+in [examples/monitoring/alerts.yml](examples/monitoring/alerts.yml).
 
 ## Tests
 
@@ -154,31 +190,66 @@ CPU-only tier while system RAM stays healthy).
 - **Multi-GPU and non-NVIDIA GPUs** — the monitor currently reads the first
   NVIDIA GPU via `nvidia-smi`.
 
-## Research & prior art
+## Prior art & acknowledgements
 
-RAMP is the productization of an idea validated across several research
-papers, none of which shipped as a usable daemon:
+RAMP didn't invent elastic inference. It productizes an idea that several
+research groups established and that nobody shipped as a usable daemon.
+Credit where it's due.
+
+**Research that established the idea**
 
 - **[FlexQuant](https://arxiv.org/abs/2501.07139)** (Chai et al., 2025) —
   elastic quantization ensembles for edge devices with fluctuating unified
-  memory; the closest academic statement of RAMP's problem.
+  memory. The closest academic statement of RAMP's exact problem, and the
+  clearest argument that memory elasticity is the right framing.
 - **[Any-Precision LLM](https://arxiv.org/abs/2402.10517)** (Park et al.,
-  2024) — one overlaid weight file servable at 3/4/…/n bits; the enabling
-  engine for making RAMP's downgrades near-free (roadmap).
+  2024) — one overlaid weight file servable at 3/4/…/n bits. This is the
+  engine that would make RAMP's downgrades nearly free; it's on the roadmap
+  precisely because of this paper.
 - **[LSAQ](https://arxiv.org/abs/2412.18135)** (2024) — layer-specific
-  adaptive quantization chosen per memory budget on edge devices.
+  adaptive quantization chosen per memory budget, the source of the idea that
+  a *memory budget* should be the primary input to the decision.
 - **[Voltron](https://arxiv.org/abs/2607.07046)** (2026) — monitors KV-cache
-  size and free memory *during* generation and scales precision mid-stream.
+  growth and free memory *during* generation, scaling precision mid-stream.
+  RAMP does the cruder between-requests version; Voltron shows where this
+  ends up.
 - **[MoBiQuant](https://arxiv.org/abs/2602.20191)** (2026) — token-adaptive
   any-precision inference with efficient runtime bit-width switching.
-- **[PowerInfer](https://arxiv.org/abs/2312.12456)** / **[AirLLM](https://github.com/lyogavin/airllm)** —
-  static strategies for *fitting* oversized models (hot/cold neuron
-  offloading; layer streaming), complementary to RAMP's elasticity.
+- **[PowerInfer](https://arxiv.org/abs/2312.12456)** and
+  **[AirLLM](https://github.com/lyogavin/airllm)** — strategies for *fitting*
+  oversized models (hot/cold neuron offloading, layer streaming). A different
+  problem from elasticity, but complementary and worth knowing.
 
-Prior tools that solve adjacent problems: [llama-swap](https://github.com/mostlygeek/llama-swap)
-(swaps models on client request, not system state), Ollama/LM Studio
-(one-time hardware detection at load; see [ollama#14674](https://github.com/ollama/ollama/issues/14674)).
+**Tools that shaped the design**
+
+- **[llama-swap](https://github.com/mostlygeek/llama-swap)** — the direct
+  inspiration for the *shape* of the solution: a transparent proxy in front of
+  local inference servers, swapping backends behind a stable endpoint. RAMP
+  differs in what triggers a swap (system resource state rather than the
+  client's requested model name), but the invisible-proxy architecture is
+  llama-swap's idea and it is the right one.
+- **[Ollama](https://ollama.com)** and **[LM Studio](https://lmstudio.ai)** —
+  proved local LLM tooling must be zero-configuration to get adopted. Their
+  one-time hardware detection is the limitation RAMP addresses, and
+  [ollama#14674](https://github.com/ollama/ollama/issues/14674) is the demand
+  for it in users' own words.
+
+**Built on**
+
+[llama.cpp](https://github.com/ggml-org/llama.cpp) and Ollama do the actual
+inference; [psutil](https://github.com/giampaolo/psutil) reads system memory;
+[FastAPI](https://fastapi.tiangolo.com), [httpx](https://www.python-httpx.org)
+and [uvicorn](https://www.uvicorn.org) carry the proxy. RAMP is a controller —
+it deliberately owns none of the hard parts of inference.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). You don't need any model files to
+develop or test — the `mock` backend runs the whole daemon end-to-end in
+seconds. Real-world `/ramp/metrics` reports from your own machine are
+especially welcome: whether the tuning defaults are right is an empirical
+question, and more data settles it.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

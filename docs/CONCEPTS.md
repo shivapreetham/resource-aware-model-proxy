@@ -193,10 +193,32 @@ There's no "shrink to 60%" call. Changing size means: unload the old model,
 load the new one. This is why RAMP's unit of action is a *swap*, not an
 adjustment.
 
-**2. Swaps cost seconds.**
-Reading gigabytes from disk and initializing takes 5–30 seconds. Measured
-here: 26 s for a cold start of the 1.5B tier including daemon boot. That cost
-is what makes naive reactions dangerous — see thrashing below.
+**2. Swaps cost seconds — but far fewer than you'd think.**
+A *cold* load reads gigabytes from disk: 16.5 s measured for the 1.5B tier.
+But the OS keeps recently-read model files in its page cache, so in steady
+state a swap is much cheaper. Measured on the same machine:
+
+| Operation | Time |
+|---|---|
+| Cold load (1.5B) | 16.47 s |
+| Unload + reload, same model (warm) | 1.88 s |
+| Full downgrade (unload 1.5B → load 0.5B) | 1.87 s |
+| Full upgrade (unload 0.5B → load 1.5B) | 1.87 s |
+| Complete down-then-up cycle | ~3.6 s |
+
+So the honest cost of elasticity in steady state is **about two seconds per
+swap**, not twenty. Even at the worst rate the hysteresis permits — a full
+cycle every two minutes — that is roughly 3% overhead.
+
+There is a pleasing accident here. When pressure is severe enough that the OS
+evicts a cached model, it's the *upgrade* that becomes slow again, never the
+downgrade: the small model being loaded under pressure is small and likely
+still cached. **The cost asymmetry lines up with the urgency asymmetry** — the
+direction that matters when the machine is struggling stays fast.
+
+Note also that swaps are *sequential*: the old backend is stopped before the
+new one starts, so peak memory never exceeds the larger of the two tiers.
+There is no moment where both models are resident.
 
 **3. You cannot swap mid-generation.**
 A response being streamed token-by-token is stateful; you can't hand it to a
@@ -282,11 +304,20 @@ reversing. RAMP applies it three ways:
 | Consecutive breaches | `downgrade_after_samples` (2) | Ignore single-sample spikes |
 | Sustained recovery | `upgrade_after_s` (120) | Memory must stay free for minutes |
 | Extra headroom | `upgrade_extra_mb` (1024) | Upgrade only with room to spare |
+| Cooldown | `min_swap_interval_s` (60) | Hard floor between upgrades |
 
-That last one is the subtle and important one. If a bigger tier were loaded
+The third one is the subtle and important one. If a bigger tier were loaded
 the instant it *barely* fits, it would immediately consume the very headroom
 that justified loading it, breach the margin, and be downgraded again. So
 upgrading requires *more* free memory than merely fitting.
+
+The fourth is a backstop. Hysteresis is a *heuristic* — it damps oscillation
+but doesn't bound it. The cooldown is a hard rate limit: no upgrade may
+happen within `min_swap_interval_s` of the last switch, whatever the readings
+say. Note that it applies to **upgrades only** — delaying a downgrade risks an
+OOM, while delaying an upgrade costs nothing. The critical floor bypasses it
+entirely. Every suppression is counted in `/ramp/metrics`, so you can see
+whether the limiter is actually load-bearing on your machine.
 
 ### 5.4 Deliberate asymmetry
 

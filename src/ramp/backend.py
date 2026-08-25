@@ -19,7 +19,6 @@ import os
 import socket
 import subprocess
 import sys
-from typing import Optional
 
 import httpx
 
@@ -43,9 +42,9 @@ class ProcessBackend:
 
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
-        self.proc: Optional[asyncio.subprocess.Process] = None
-        self.port: Optional[int] = None
-        self.tier: Optional[TierConfig] = None
+        self.proc: asyncio.subprocess.Process | None = None
+        self.port: int | None = None
+        self.tier: TierConfig | None = None
         self._log_handle = None
 
     @property
@@ -53,7 +52,7 @@ class ProcessBackend:
         return f"http://127.0.0.1:{self.port}"
 
     @property
-    def serving_model(self) -> Optional[str]:
+    def serving_model(self) -> str | None:
         """Model name the proxy should rewrite requests to (None = leave as-is)."""
         return None
 
@@ -66,7 +65,10 @@ class ProcessBackend:
     def _stdio(self):
         if self.cfg.backend_log:
             if self._log_handle is None:
-                self._log_handle = open(self.cfg.backend_log, "ab")
+                # Deliberately not a context manager: this handle is the
+                # child process's stdout/stderr and must outlive this call.
+                # It is closed in close().
+                self._log_handle = open(self.cfg.backend_log, "ab")  # noqa: SIM115
             return self._log_handle
         return asyncio.subprocess.DEVNULL
 
@@ -171,15 +173,15 @@ class OllamaBackend:
 
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
-        self.tier: Optional[TierConfig] = None
-        self.proc: Optional[asyncio.subprocess.Process] = None  # only if we spawned serve
+        self.tier: TierConfig | None = None
+        self.proc: asyncio.subprocess.Process | None = None  # only if we spawned serve
 
     @property
     def base_url(self) -> str:
         return self.cfg.ollama_url
 
     @property
-    def serving_model(self) -> Optional[str]:
+    def serving_model(self) -> str | None:
         return self.tier.model if self.tier is not None else None
 
     def alive(self) -> bool:
@@ -234,7 +236,9 @@ class OllamaBackend:
                     timeout=self.cfg.startup_timeout_s,
                 )
             except httpx.HTTPError as e:
-                raise BackendError(f"failed to load ollama model {tier.model!r}: {e}")
+                raise BackendError(
+                    f"failed to load ollama model {tier.model!r}: {e}"
+                ) from e
         if r.status_code != 200:
             raise BackendError(
                 f"ollama refused to load {tier.model!r}: {r.status_code} {r.text[:200]}"

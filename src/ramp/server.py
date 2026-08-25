@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from .config import Config
 from .controller import Controller
@@ -59,6 +60,13 @@ def create_app(controller: Controller, cfg: Config) -> FastAPI:
     async def status():
         return controller.status()
 
+    @app.get("/ramp/metrics")
+    async def metrics():
+        return PlainTextResponse(
+            controller.prometheus(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
     @app.post("/ramp/pin/{name}")
     async def pin(name: str):
         try:
@@ -76,13 +84,21 @@ def create_app(controller: Controller, cfg: Config) -> FastAPI:
 
     @app.api_route("/v1/{path:path}", methods=["GET", "POST"])
     async def proxy(path: str, request: Request):
+        gate_t0 = time.monotonic()
         try:
             await asyncio.wait_for(controller.ready.wait(), cfg.queue_timeout_s)
         except asyncio.TimeoutError:
+            controller.metrics.requests_rejected += 1
             return JSONResponse(
-                {"error": {"message": "no model loaded (memory too low or swap in progress)", "type": "ramp_unavailable"}},
+                {
+                    "error": {
+                        "message": "no model loaded (resources too low or swap in progress)",
+                        "type": "ramp_unavailable",
+                    }
+                },
                 status_code=503,
             )
+        controller.metrics.request_started(time.monotonic() - gate_t0)
 
         client: httpx.AsyncClient = request.app.state.client
         headers = {
@@ -113,6 +129,7 @@ def create_app(controller: Controller, cfg: Config) -> FastAPI:
             upstream = await client.send(upstream_req, stream=True)
         except httpx.HTTPError as e:
             controller.inflight -= 1
+            controller.metrics.requests_failed += 1
             return JSONResponse(
                 {"error": {"message": f"backend unreachable: {e}", "type": "ramp_backend_error"}},
                 status_code=502,

@@ -214,3 +214,35 @@ def test_low_disk_does_not_force_downgrade(policy):
 def test_no_disk_reading_means_no_gate(policy):
     d = policy.evaluate(1, S(8000, disk_free=None), now=0)
     assert d.reason == "upgrade-pending"
+
+
+# -- cooldown rate limiter -----------------------------------------------
+
+def test_cooldown_delays_upgrade():
+    p = Policy(make_cfg(min_swap_interval_s=100))
+    p.reset(now=0)  # a switch just happened at t=0
+
+    # Hysteresis is satisfied by t=61, but the cooldown has not expired.
+    p.evaluate(1, S(5000), now=0)
+    d = p.evaluate(1, S(5000), now=61)
+    assert d.action == "stay" and d.reason == "cooldown"
+
+    # Past the cooldown, the upgrade proceeds.
+    d = p.evaluate(1, S(5000), now=101)
+    assert d.action == "switch" and d.target == 0
+
+
+def test_cooldown_never_blocks_a_downgrade():
+    p = Policy(make_cfg(min_swap_interval_s=100))
+    p.reset(now=0)
+    p.evaluate(0, S(800), now=1)
+    d = p.evaluate(0, S(800), now=2)
+    assert d.action == "switch", "a downgrade must never be delayed by cooldown"
+    assert d.reason == "memory-pressure"
+
+
+def test_cooldown_never_blocks_critical():
+    p = Policy(make_cfg(min_swap_interval_s=100))
+    p.reset(now=0)
+    d = p.evaluate(0, S(400), now=1)
+    assert d.action == "switch" and d.reason == "critical-memory"

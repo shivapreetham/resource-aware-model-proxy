@@ -17,7 +17,7 @@ from .server import create_app
 def main() -> None:
     p = argparse.ArgumentParser(
         prog="ramp",
-        description="RAMP - RAM-Aware Model Proxy: elastic local LLM daemon",
+        description="RAMP - Resource-Aware Model Proxy: elastic local LLM daemon",
     )
     p.add_argument("--config", "-c", required=True, help="path to ramp.yaml")
     p.add_argument("--log-level", default="info")

@@ -20,7 +20,7 @@ No I/O happens here; the controller executes the decisions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal
 
 from .config import Config
 from .monitor import ResourceSample
@@ -31,7 +31,7 @@ Action = Literal["stay", "switch", "unload"]
 @dataclass
 class Decision:
     action: Action
-    target: Optional[int] = None
+    target: int | None = None
     reason: str = ""
 
 
@@ -39,12 +39,19 @@ class Policy:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
         self._breaches = 0
-        self._upgrade_since: Optional[float] = None
+        self._upgrade_since: float | None = None
+        self._last_switch_at: float | None = None
 
-    def reset(self) -> None:
-        """Clear hysteresis state (called after every executed switch)."""
+    def reset(self, now: float | None = None) -> None:
+        """Clear hysteresis state (called after every executed switch).
+
+        ``now`` starts the upgrade cooldown; omit it to clear hysteresis
+        without counting a switch.
+        """
         self._breaches = 0
         self._upgrade_since = None
+        if now is not None:
+            self._last_switch_at = now
 
     # -- helpers ---------------------------------------------------------
 
@@ -52,7 +59,7 @@ class Policy:
         self,
         idx: int,
         ram_budget_mb: float,
-        vram_budget_mb: Optional[float],
+        vram_budget_mb: float | None,
         ram_extra_mb: float = 0.0,
         vram_extra_mb: float = 0.0,
     ) -> bool:
@@ -70,10 +77,10 @@ class Policy:
     def _best_fit(
         self,
         ram_budget_mb: float,
-        vram_budget_mb: Optional[float],
+        vram_budget_mb: float | None,
         ram_extra_mb: float = 0.0,
         vram_extra_mb: float = 0.0,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Best (largest) tier that fits every budget."""
         for i in range(len(self.cfg.tiers)):
             if self._tier_fits(i, ram_budget_mb, vram_budget_mb, ram_extra_mb, vram_extra_mb):
@@ -81,8 +88,8 @@ class Policy:
         return None
 
     def _best_fit_smaller(
-        self, current: int, ram_budget_mb: float, vram_budget_mb: Optional[float]
-    ) -> Optional[int]:
+        self, current: int, ram_budget_mb: float, vram_budget_mb: float | None
+    ) -> int | None:
         """Largest tier strictly smaller than ``current`` that fits."""
         for i in range(current + 1, len(self.cfg.tiers)):
             if self._tier_fits(i, ram_budget_mb, vram_budget_mb):
@@ -91,7 +98,7 @@ class Policy:
 
     # -- decisions -------------------------------------------------------
 
-    def initial_tier(self, sample: ResourceSample) -> Optional[int]:
+    def initial_tier(self, sample: ResourceSample) -> int | None:
         vram = sample.gpu.free_raw_mb if sample.gpu is not None else None
         return self._best_fit(sample.ram.raw_mb, vram)
 
@@ -107,8 +114,8 @@ class Policy:
         ram_budget_raw = ram_raw + cur.est_ram_mb
         ram_budget_ema = ram_ema + cur.est_ram_mb
         if sample.gpu is not None:
-            vram_budget_raw: Optional[float] = sample.gpu.free_raw_mb + cur.est_vram_mb
-            vram_budget_ema: Optional[float] = sample.gpu.free_ema_mb + cur.est_vram_mb
+            vram_budget_raw: float | None = sample.gpu.free_raw_mb + cur.est_vram_mb
+            vram_budget_ema: float | None = sample.gpu.free_ema_mb + cur.est_vram_mb
         else:
             vram_budget_raw = vram_budget_ema = None
 
@@ -164,6 +171,14 @@ class Policy:
                 self._upgrade_since = now
                 return Decision("stay", reason="upgrade-pending")
             if now - self._upgrade_since >= hys.upgrade_after_s:
+                # Rate limiter: even with the hysteresis satisfied, refuse to
+                # upgrade too soon after the last switch. This is what bounds
+                # churn in the worst case.
+                if (
+                    self._last_switch_at is not None
+                    and now - self._last_switch_at < cfg.min_swap_interval_s
+                ):
+                    return Decision("stay", reason="cooldown")
                 self._upgrade_since = None
                 return Decision("switch", best, "headroom-recovered")
             return Decision("stay", reason="upgrade-pending")
