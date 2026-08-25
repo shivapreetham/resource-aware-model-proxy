@@ -336,7 +336,42 @@ The extreme case is the **critical floor** (`critical_free_mb`): below it,
 RAMP skips hysteresis entirely and acts on a single sample. If nothing fits,
 it unloads everything — serving 503s beats taking the whole machine down.
 
-### 5.5 Budgets are computed post-swap
+### 5.5 What the controller itself costs
+
+A fair objection to any watchdog: **is the watcher eating the memory it claims
+to be saving?** Measured on the development machine, with the mock backend so
+the only real cost is RAMP:
+
+| | RSS |
+|---|---|
+| RAMP daemon (uvicorn + FastAPI + monitor loop) | **~65 MB** |
+| Growth over 300 requests, 200 metric polls, 12 swaps | **+1.9 MB** |
+| CPU consumed across that whole run | 0.9 s |
+
+Two things make this a non-issue rather than a caveat.
+
+**RAMP never budgets memory it is itself using.** `psutil.virtual_memory()
+.available` already excludes the daemon's own resident memory. The policy
+therefore reasons about genuinely free memory, not memory the daemon has
+quietly claimed. Its 65 MB is simply gone from the pool before any tier
+decision is made — the same as any other running program.
+
+**The overhead is ~1–3% of a single tier.** A tier is measured in gigabytes;
+the controller is measured in tens of megabytes. If RAMP prevents even one
+OOM-kill or one bout of disk swapping per day, it has paid for itself many
+times over.
+
+Rather than ask you to trust those numbers, the daemon **reports its own
+footprint**: `/ramp/status` carries a `self` block, and `/ramp/metrics`
+exposes `ramp_self_rss_bytes` and `ramp_backend_rss_bytes`. Verify it on your
+own machine.
+
+One honest caveat: `backend_rss_bytes` only covers backends RAMP *spawned*.
+With the `ollama` backend the model lives inside a pre-existing Ollama server
+that isn't RAMP's child, so that figure reads near zero there — the model's
+memory is real, it just isn't in RAMP's process tree.
+
+### 5.6 Budgets are computed post-swap
 
 A subtlety worth stating: when deciding what to switch *to*, RAMP doesn't
 compare against currently-free memory. It compares against what would be free

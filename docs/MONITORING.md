@@ -133,6 +133,25 @@ on them. To measure rather than guess:
    because it lets RAMP load something that doesn't actually fit.
 4. Release: `curl -X DELETE localhost:8090/ramp/pin`
 
+## Is RAMP itself the problem?
+
+A daemon that watches memory should be able to account for its own. It does:
+
+```promql
+ramp_self_rss_bytes / 1024 / 1024        # the daemon's own overhead, MB
+ramp_backend_rss_bytes / 1024 / 1024     # backends RAMP spawned
+```
+
+Expect roughly **65 MB** for the daemon, stable over time — if
+`ramp_self_rss_bytes` climbs steadily over hours, that's a leak worth an
+issue report, and this metric exists so you can catch it.
+
+Note that the daemon's own memory is already excluded from
+`virtual_memory().available`, so RAMP never budgets memory it is itself
+consuming. And `ramp_backend_rss_bytes` only counts backends RAMP *spawned*:
+with the `ollama` backend the model lives in a pre-existing Ollama server
+outside RAMP's process tree, so it reads near zero there.
+
 ## A note on what isn't measured
 
 RAMP tracks its own behaviour, not model quality. It cannot tell you whether

@@ -16,7 +16,7 @@ from collections import deque
 from .backend import BackendError, ProcessBackend
 from .config import Config
 from .metrics import Metrics
-from .monitor import ResourceMonitor, ResourceSample
+from .monitor import ResourceMonitor, ResourceSample, process_footprint
 from .policy import Policy
 
 log = logging.getLogger("ramp.controller")
@@ -241,11 +241,25 @@ class Controller:
                 }
                 for i, t in enumerate(self.cfg.tiers)
             ],
+            "self": self.self_footprint(),
             "metrics": self.metrics.snapshot(),
             "events": list(self.events),
         }
 
+    def self_footprint(self) -> dict:
+        """What RAMP itself costs. Surfaced so users can verify the overhead
+        rather than take the README's word for it."""
+        try:
+            f = process_footprint()
+        except Exception:  # psutil can fail on locked-down systems
+            return {}
+        return {
+            "rss_mb": round(f.rss_mb, 1),
+            "backend_rss_mb": round(f.children_rss_mb, 1),
+            "backend_processes": f.child_count,
+        }
+
     def prometheus(self) -> str:
         return self.metrics.prometheus(
-            self.tier_name, [t.name for t in self.cfg.tiers]
+            self.tier_name, [t.name for t in self.cfg.tiers], self.self_footprint()
         )

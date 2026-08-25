@@ -120,7 +120,9 @@ class Metrics:
             "requests_failed": self.requests_failed,
         }
 
-    def prometheus(self, tier: str | None, tiers: list[str]) -> str:
+    def prometheus(
+        self, tier: str | None, tiers: list[str], selfstat: dict | None = None
+    ) -> str:
         """Render Prometheus text exposition format."""
         L: list[str] = []
         occupancy = self._live_tier_seconds()
@@ -158,4 +160,15 @@ class Metrics:
                "Requests rejected with 503 (no model available).", [("", self.requests_rejected)])
         metric("ramp_requests_failed_total", "counter",
                "Requests failed with 502 (backend unreachable).", [("", self.requests_failed)])
+        if selfstat:
+            mb = 1024 * 1024
+            metric("ramp_self_rss_bytes", "gauge",
+                   "Resident memory of the RAMP daemon itself (its overhead).",
+                   [("", int(selfstat.get("rss_mb", 0) * mb))])
+            metric("ramp_backend_rss_bytes", "gauge",
+                   "Resident memory of backend processes RAMP spawned.",
+                   [("", int(selfstat.get("backend_rss_mb", 0) * mb))])
+            metric("ramp_backend_processes", "gauge",
+                   "Number of backend processes RAMP spawned.",
+                   [("", selfstat.get("backend_processes", 0))])
         return "\n".join(L) + "\n"

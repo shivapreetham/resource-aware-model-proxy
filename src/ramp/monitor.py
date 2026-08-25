@@ -55,6 +55,40 @@ class ResourceSample:
     ts: float
 
 
+@dataclass
+class ProcessSample:
+    """RAMP's own footprint - the overhead it charges for managing the rest."""
+
+    rss_mb: float
+    children_rss_mb: float
+    child_count: int
+
+
+def process_footprint() -> ProcessSample:
+    """Measure this daemon's RSS and that of the backends it spawned.
+
+    Two honest caveats worth knowing when reading these numbers:
+
+    * The daemon's own memory is *already* excluded from
+      ``virtual_memory().available``, so the policy never budgets memory it
+      is itself consuming. This is reported for transparency, not accounting.
+    * ``children_rss_mb`` only covers backends RAMP spawned. With the
+      ``ollama`` backend the model lives inside a pre-existing Ollama server
+      that is not our child, so it reads ~0 there.
+    """
+    p = psutil.Process()
+    own = p.memory_info().rss / _MB
+    kids = 0.0
+    n = 0
+    for c in p.children(recursive=True):
+        try:
+            kids += c.memory_info().rss / _MB
+            n += 1
+        except psutil.Error:  # process exited mid-enumeration
+            continue
+    return ProcessSample(rss_mb=own, children_rss_mb=kids, child_count=n)
+
+
 class ResourceMonitor:
     def __init__(
         self,

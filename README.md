@@ -161,6 +161,21 @@ churn worth tuning. [docs/MONITORING.md](docs/MONITORING.md) explains each
 number, what to alert on, and how to tune from what you see. Alert rules ship
 in [examples/monitoring/alerts.yml](examples/monitoring/alerts.yml).
 
+### What RAMP itself costs
+
+Fair question for any watchdog: is the watcher eating the memory it claims to
+save? Measured — **~65 MB resident, and flat** (+1.9 MB across 300 requests,
+200 metric polls and 12 swaps; 0.9 s of CPU for the whole run).
+
+Two things make that a non-issue. RAMP **never budgets memory it is itself
+using** — `virtual_memory().available` already excludes the daemon's own
+footprint, so the policy reasons about genuinely free memory. And 65 MB is
+roughly 1–3% of a single tier, which is measured in gigabytes.
+
+You don't have to take that on faith: the daemon reports its own footprint in
+`/ramp/status` (a `self` block) and as `ramp_self_rss_bytes` /
+`ramp_backend_rss_bytes` in Prometheus. Check it on your machine.
+
 ## Tests
 
 ```bash

@@ -226,6 +226,23 @@ async def test_prometheus_endpoint(stack):
             float(line.rsplit(" ", 1)[1])
 
 
+async def test_self_footprint_is_reported(stack):
+    """RAMP reports its own overhead, so users can verify rather than trust."""
+    _controller, _monitor, client = stack
+    await wait_for_tier(client, "big")
+
+    s = (await client.get("/ramp/status")).json()["self"]
+    assert s["rss_mb"] > 0
+    # The mock backend is a real child process, so it must be visible.
+    assert s["backend_processes"] >= 1
+    assert s["backend_rss_mb"] > 0
+
+    body = (await client.get("/ramp/metrics")).text
+    assert "ramp_self_rss_bytes" in body
+    assert "ramp_backend_rss_bytes" in body
+    assert "ramp_backend_processes" in body
+
+
 async def test_pin_unknown_tier_404(stack):
     _, _, client = stack
     r = await client.post("/ramp/pin/nope")
