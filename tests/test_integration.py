@@ -243,6 +243,81 @@ async def test_self_footprint_is_reported(stack):
     assert "ramp_backend_processes" in body
 
 
+async def test_models_list_is_stable_across_swaps(stack):
+    """Clients cache /v1/models to populate dropdowns. The list must not
+    change under them when RAMP swaps tiers."""
+    _controller, monitor, client = stack
+    await wait_for_tier(client, "big")
+
+    before = (await client.get("/v1/models")).json()
+    ids = [m["id"] for m in before["data"]]
+    assert before["object"] == "list"
+    assert "auto" in ids, "the virtual model name must be advertised"
+    assert {"big", "small"} <= set(ids), "configured tiers should be listed"
+
+    monitor.avail_mb = 600
+    await wait_for_tier(client, "small")
+    after = (await client.get("/v1/models")).json()
+    assert [m["id"] for m in after["data"]] == ids
+
+
+async def test_health_endpoint(stack):
+    _controller, _monitor, client = stack
+    await wait_for_tier(client, "big")
+    r = await client.get("/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+    assert r.json()["tier"] == "big"
+
+
+async def test_cors_headers_present_for_browser_clients(stack):
+    """Browser front-ends can't call RAMP at all without these."""
+    _controller, _monitor, client = stack
+    await wait_for_tier(client, "big")
+
+    r = await client.options(
+        "/v1/chat/completions",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+    assert r.status_code in (200, 204)
+    assert r.headers.get("access-control-allow-origin") == "*"
+
+    r = await client.post(
+        "/v1/chat/completions",
+        json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]},
+        headers={"Origin": "http://localhost:3000"},
+    )
+    assert r.headers.get("access-control-allow-origin") == "*"
+    # The tier header must survive CORS, or browser clients can't read it.
+    assert "x-ramp-tier" in r.headers.get("access-control-expose-headers", "").lower()
+
+
+async def test_unknown_model_name_is_served_anyway(stack):
+    """Clients often send a hard-coded model name. RAMP serves whatever is
+    loaded rather than 404-ing, which is what makes it a drop-in."""
+    _controller, _monitor, client = stack
+    await wait_for_tier(client, "big")
+    r = await client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers["x-ramp-tier"] == "big"
+
+
+async def test_query_params_are_forwarded(stack):
+    _controller, _monitor, client = stack
+    await wait_for_tier(client, "big")
+    r = await client.get("/v1/models?limit=1")
+    assert r.status_code == 200
+
+
 async def test_pin_unknown_tier_404(stack):
     _, _, client = stack
     r = await client.post("/ramp/pin/nope")

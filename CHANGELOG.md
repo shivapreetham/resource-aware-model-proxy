@@ -47,5 +47,5 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/ramp/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/shivapreetham/ramp/releases/tag/v0.1.0
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.1.0

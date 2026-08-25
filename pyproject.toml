@@ -29,12 +29,6 @@ classifiers = [
     "Topic :: Internet :: Proxy Servers",
 ]
 
-[project.urls]
-Homepage = "https://github.com/shivapreetham/ramp"
-Repository = "https://github.com/shivapreetham/ramp"
-Issues = "https://github.com/shivapreetham/ramp/issues"
-Changelog = "https://github.com/shivapreetham/ramp/blob/main/CHANGELOG.md"
-Concepts = "https://github.com/shivapreetham/ramp/blob/main/docs/CONCEPTS.md"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
@@ -43,8 +37,15 @@ dependencies = [
     "PyYAML>=6.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/shivapreetham/resource-aware-model-proxy"
+Repository = "https://github.com/shivapreetham/resource-aware-model-proxy"
+Issues = "https://github.com/shivapreetham/resource-aware-model-proxy/issues"
+Changelog = "https://github.com/shivapreetham/resource-aware-model-proxy/blob/main/CHANGELOG.md"
+Concepts = "https://github.com/shivapreetham/resource-aware-model-proxy/blob/main/docs/CONCEPTS.md"
+
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.6"]
 
 [project.scripts]
 ramp = "ramp.__main__:main"

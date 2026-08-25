@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from .config import Config
@@ -54,6 +55,20 @@ def create_app(controller: Controller, cfg: Config) -> FastAPI:
         timeout=httpx.Timeout(connect=10.0, read=None, write=None, pool=None)
     )
 
+    # Browser-based clients (Open WebUI, LibreChat, custom web front-ends)
+    # can't call RAMP at all without CORS. Permissive by default because the
+    # daemon binds to localhost; narrow it with `cors_origins` if you expose
+    # it on a network.
+    if cfg.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cfg.cors_origins,
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["x-ramp-tier"],
+        )
+
     # -- control API -----------------------------------------------------
 
     @app.get("/ramp/status")
@@ -80,10 +95,62 @@ def create_app(controller: Controller, cfg: Config) -> FastAPI:
         controller.unpin()
         return {"pinned": None}
 
+    # -- compatibility surface -------------------------------------------
+
+    @app.get("/health")
+    async def health():
+        """Liveness for orchestrators, Docker healthchecks, and clients that
+        probe before connecting. 200 whenever RAMP can serve."""
+        ready = controller.ready.is_set()
+        return JSONResponse(
+            {"status": "ok" if ready else "loading", "tier": controller.tier_name},
+            status_code=200 if ready else 503,
+        )
+
+    @app.get("/v1/models")
+    async def list_models():
+        """A stable model list, independent of what's loaded right now.
+
+        Clients populate dropdowns from this and cache it, so returning the
+        physical backend model would make the menu change under the user
+        every time RAMP swaps. Instead we advertise the virtual name "auto"
+        plus the configured tiers, which never change while running.
+        """
+        created = int(time.time())
+        data = [
+            {"id": "auto", "object": "model", "created": created, "owned_by": "ramp"}
+        ]
+        data += [
+            {
+                "id": t.name,
+                "object": "model",
+                "created": created,
+                "owned_by": "ramp",
+            }
+            for t in cfg.tiers
+        ]
+        return {"object": "list", "data": data}
+
     # -- OpenAI passthrough ---------------------------------------------
 
-    @app.api_route("/v1/{path:path}", methods=["GET", "POST"])
+    @app.api_route(
+        "/v1/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    )
     async def proxy(path: str, request: Request):
+        return await _forward(request, f"/v1/{path}")
+
+    # Ollama's native API, for tools written against Ollama rather than the
+    # OpenAI shape. Only meaningful with the ollama backend; harmless (404s
+    # from upstream) otherwise.
+    @app.api_route(
+        "/api/{path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    )
+    async def proxy_native(path: str, request: Request):
+        return await _forward(request, f"/api/{path}")
+
+    async def _forward(request: Request, upstream_path: str):
         gate_t0 = time.monotonic()
         try:
             await asyncio.wait_for(controller.ready.wait(), cfg.queue_timeout_s)
@@ -119,9 +186,10 @@ def create_app(controller: Controller, cfg: Config) -> FastAPI:
                 pass  # not JSON; forward untouched
         upstream_req = client.build_request(
             request.method,
-            f"{controller.backend.base_url}/v1/{path}",
+            f"{controller.backend.base_url}{upstream_path}",
             content=body_bytes,
             headers=headers,
+            params=dict(request.query_params),
         )
 
         controller.inflight += 1

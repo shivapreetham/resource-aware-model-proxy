@@ -6,7 +6,7 @@ daemon people can read in an afternoon and trust with their machine.
 ## Getting set up
 
 ```bash
-git clone https://github.com/shivapreetham/ramp
+git clone https://github.com/shivapreetham/resource-aware-model-proxy
 cd ramp
 python -m venv .venv
 .venv/bin/pip install -e ".[dev]"     # Windows: .venv\Scripts\pip

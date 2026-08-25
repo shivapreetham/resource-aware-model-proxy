@@ -84,6 +84,10 @@ class Config:
     backend_log: str = ""
     # Smoothing factor for the available-memory EMA (higher = more reactive).
     ema_alpha: float = 0.4
+    # Origins allowed to call RAMP from a browser. Permissive by default so
+    # web front-ends work out of the box on a localhost daemon; set to [] to
+    # disable CORS entirely.
+    cors_origins: list[str] = field(default_factory=lambda: ["*"])
 
     @staticmethod
     def from_dict(raw: dict[str, Any]) -> Config:
@@ -167,6 +171,7 @@ class Config:
             ollama_url=str(raw.get("ollama_url", "http://127.0.0.1:11434")),
             backend_log=str(raw.get("backend_log", "")),
             ema_alpha=float(raw.get("ema_alpha", 0.4)),
+            cors_origins=[str(o) for o in raw.get("cors_origins", ["*"])],
         )
 
     @staticmethod
