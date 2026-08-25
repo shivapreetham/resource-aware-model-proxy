@@ -146,7 +146,7 @@ def check_port(host: str = "127.0.0.1", port: int = 8090) -> Check:
                 ):
                     return Check(
                         "Listen port", "ok", f"{port} - a RAMP daemon is already running",
-                        f"Query it with 'ramp status', or stop it before starting another.",
+                        "Query it with 'ramp status', or stop it before starting another.",
                     )
             except (urllib.error.URLError, OSError):
                 return Check(

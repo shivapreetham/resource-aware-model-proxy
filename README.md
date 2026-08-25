@@ -19,6 +19,15 @@ Continue, or `curl` just point `base_url` at RAMP and work unchanged** — no
 code, no client plugin, nothing to adopt. Swaps cost ~2 seconds warm
 (measured), and in-flight requests are drained rather than dropped.
 
+```diff
+- client = OpenAI(base_url="http://localhost:11434/v1")   # straight to Ollama
++ client = OpenAI(base_url="http://localhost:8090/v1")    # through RAMP
+```
+
+That's the entire integration. Verified against the official `openai` Python
+SDK: model listing, streaming, and hard-coded model names all work untouched.
+Ollama's native `/api/*` routes are proxied too, for tools that use those.
+
 > **New here?** [docs/CONCEPTS.md](docs/CONCEPTS.md) explains what's actually
 > going on: what consumes memory when an LLM runs, why VRAM pressure silently
 > becomes RAM pressure, and the control-theory ideas (hysteresis, damping)
@@ -88,18 +97,55 @@ runs on the GPU), and the policy holds **RAM, VRAM, and disk** accountable:
   (up to `drain_timeout_s`), and incoming requests wait on the swap gate
   instead of failing.
 
-## Quick start (no models needed)
+## Install
+
+RAMP is a Python CLI, so it installs like one. No config file needed — it
+inspects your machine and your installed Ollama models and builds a ladder
+itself.
 
 ```bash
-pip install -e .[dev]
-ramp -c examples/ramp.mock.yaml
+uvx ramp-llm            # run without installing anything (needs uv)
+pipx install ramp-llm   # or install it properly
+pip install ramp-llm    # or into the current environment
+```
+
+Then:
+
+```bash
+ramp doctor    # check this machine can run it, and what to fix if not
+ramp           # start, with an auto-detected ladder
+ramp status    # what's loaded, why, and what it's costing
+```
+
+`ramp` prints the endpoint to point your tools at. That's the whole setup.
+
+<details>
+<summary>Other commands</summary>
+
+```bash
+ramp init                  # write the auto-detected ladder to ramp.yaml to tune
+ramp run -c ramp.yaml      # start from an explicit config
+ramp status --json         # raw status for scripting
+ramp --help
+```
+
+`ramp run` with no `-c` uses `./ramp.yaml` if present, otherwise auto-detects.
+</details>
+
+## Try it without any models
+
+The `mock` backend runs the whole daemon against fake OpenAI servers that tag
+their replies with the tier name — so you can watch the laddering behaviour
+in about thirty seconds, with nothing to download.
+
+```bash
+ramp run -c examples/ramp.mock.yaml
 ```
 
 Then, in another terminal:
 
 ```bash
 curl http://127.0.0.1:8090/ramp/status
-curl http://127.0.0.1:8090/v1/chat/completions -H "Content-Type: application/json" -d "{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
 python scripts/stress_ram.py --mb 6000 --hold-s 60
 ```
 
