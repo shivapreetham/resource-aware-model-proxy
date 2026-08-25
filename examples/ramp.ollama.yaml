@@ -1,0 +1,36 @@
+# Real-model ladder served through a local Ollama server (signed runtime -
+# works even where Windows Smart App Control blocks unsigned llama-server
+# builds). Tiers reference Ollama model tags; RAMP loads/unloads them and
+# rewrites the request's "model" field to the active tier.
+
+listen:
+  host: 127.0.0.1
+  port: 8091
+
+backend: ollama
+ollama_bin: C:/Users/Shivapreetham/AppData/Local/Programs/Ollama/ollama.exe
+ollama_url: http://127.0.0.1:11434
+
+poll_interval_s: 2
+safety_margin_mb: 2048
+vram_safety_margin_mb: 512    # enforced because an NVIDIA GPU is present
+disk_min_free_mb: 5120        # below this free disk, upgrades are blocked
+drain_timeout_s: 30
+startup_timeout_s: 180
+
+hysteresis:
+  downgrade_after_samples: 2
+  upgrade_after_s: 20
+  upgrade_extra_mb: 512
+  critical_free_mb: 1024
+
+tiers:
+  - name: qwen2.5-1.5b
+    model: ramp-qwen-1.5b
+    est_ram_mb: 2200
+    est_vram_mb: 1800     # Ollama offloads to the GPU when it can
+
+  - name: qwen2.5-0.5b
+    model: ramp-qwen-0.5b
+    est_ram_mb: 1000
+    est_vram_mb: 800

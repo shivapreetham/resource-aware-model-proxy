@@ -1,0 +1,32 @@
+# Demo config: no models needed. Each "tier" is a fake OpenAI server that
+# tags its replies with its name and allocates ballast memory so you can
+# watch RAMP ladder up and down in Task Manager.
+#
+#   ramp -c examples/ramp.mock.yaml
+#   curl http://127.0.0.1:8090/ramp/status
+#   python scripts/stress_ram.py --mb 4000 --hold-s 60   # force a downgrade
+
+listen:
+  host: 127.0.0.1
+  port: 8090
+
+backend: mock
+poll_interval_s: 2
+safety_margin_mb: 2048
+
+hysteresis:
+  downgrade_after_samples: 2
+  upgrade_after_s: 20
+  upgrade_extra_mb: 1024
+  critical_free_mb: 1024
+
+tiers:
+  - name: large-mock
+    est_ram_mb: 6000
+    mock_ballast_mb: 200
+  - name: medium-mock
+    est_ram_mb: 3000
+    mock_ballast_mb: 100
+  - name: small-mock
+    est_ram_mb: 1000
+    mock_ballast_mb: 30

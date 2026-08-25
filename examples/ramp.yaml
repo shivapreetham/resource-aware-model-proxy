@@ -1,0 +1,50 @@
+# Real config: a quality ladder of GGUF models served by llama.cpp's
+# llama-server. Adjust paths, context sizes, and est_ram_mb to your models.
+#
+# est_ram_mb = approximate resident footprint of llama-server with that
+# model + context loaded. Easiest way to calibrate: pin the tier
+# (POST /ramp/pin/<name>), check the process in Task Manager, round up.
+#
+#   ramp -c examples/ramp.yaml
+# then point any OpenAI-compatible client at http://127.0.0.1:8090/v1
+
+listen:
+  host: 127.0.0.1
+  port: 8090
+
+backend: llama
+llama_server_bin: llama-server   # or full path to llama-server.exe
+# backend_log: ramp-backend.log  # uncomment to keep llama-server output
+
+poll_interval_s: 3
+safety_margin_mb: 2048           # free RAM to preserve for the rest of the system
+vram_safety_margin_mb: 512       # free VRAM to preserve (NVIDIA GPUs, via nvidia-smi)
+disk_min_free_mb: 5120           # below this free disk, upgrades are blocked
+# disk_path: C:/                 # drive to watch (default: working directory)
+drain_timeout_s: 30
+startup_timeout_s: 300           # big models take a while to load
+
+hysteresis:
+  downgrade_after_samples: 2     # ~6s of sustained pressure triggers a downgrade
+  upgrade_after_s: 120           # 2 min of headroom before upgrading back
+  upgrade_extra_mb: 1536
+  critical_free_mb: 1024         # below this, act immediately
+
+tiers:
+  - name: qwen2.5-7b-q4
+    model: C:/models/qwen2.5-7b-instruct-q4_k_m.gguf
+    ctx: 8192
+    est_ram_mb: 6800
+    est_vram_mb: 5500            # footprint on the GPU when offloaded
+    args: ["-ngl", "999"]        # extra llama-server args per tier
+
+  - name: qwen2.5-3b-q4
+    model: C:/models/qwen2.5-3b-instruct-q4_k_m.gguf
+    ctx: 8192
+    est_ram_mb: 3200
+    args: ["-ngl", "999"]
+
+  - name: qwen2.5-0.5b-q4
+    model: C:/models/qwen2.5-0.5b-instruct-q4_k_m.gguf
+    ctx: 4096
+    est_ram_mb: 900
