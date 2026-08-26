@@ -75,6 +75,26 @@ def create_app(controller: Controller, cfg: Config) -> FastAPI:
     async def status():
         return controller.status()
 
+    @app.post("/ramp/shutdown")
+    async def shutdown():
+        """Ask the daemon to exit cleanly.
+
+        A clean exit is not a nicety here: transparent mode has moved
+        someone's model server to another port, and only an orderly shutdown
+        runs the code that puts it back. `ramp stop` calls this and falls
+        back to killing the process, which is why the arrangement is also
+        recorded on disk.
+        """
+        server = getattr(app.state, "server", None)
+        if server is None:
+            return JSONResponse(
+                {"error": "this process was not started in a way that can "
+                          "shut itself down; stop it with Ctrl+C"},
+                status_code=501,
+            )
+        server.should_exit = True
+        return {"stopping": True}
+
     @app.get("/ramp/metrics")
     async def metrics():
         return PlainTextResponse(

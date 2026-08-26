@@ -182,8 +182,9 @@ command to fix it. A `WARN` about llama.cpp is fine — you don't need it.
 ramp
 ```
 
-No config file. It finds your models, measures your RAM and GPU, and builds
-the ladder itself:
+No config file, and it runs in the background — you get your terminal back.
+It finds your models, measures your RAM and GPU, and builds the ladder
+itself:
 
 ```
 Auto-detected 2 tier(s) from Ollama (safety margin 2414 MB):
@@ -226,7 +227,7 @@ http://localhost:8090/v1
 Or don't change anything at all:
 
 ```
-ramp run --transparent
+ramp start --transparent
 ```
 
 RAMP steps in front of Ollama on its usual port, so every AI tool you have
@@ -251,7 +252,12 @@ about **65 MB**.
 
 ## Finished?
 
-Stop RAMP with `Ctrl+C`. To remove it completely:
+```
+ramp stop
+```
+
+(Demo 1 runs in the foreground, so `Ctrl+C` stops that one.) To remove it
+completely:
 
 ```
 pip uninstall ramp-llm

@@ -34,7 +34,7 @@ you already have routes through RAMP without touching a single config. Works
 with **Ollama, llama.cpp (llama-server), and LM Studio**:
 
 ```bash
-ramp run --transparent
+ramp start --transparent
 ```
 
 It asks before doing it, starts the relocated Ollama and proves it healthy
@@ -99,6 +99,7 @@ flowchart LR
 | `metrics.py` | Swap rate, occupancy, request and overhead telemetry; Prometheus exposition. |
 | `watch.py` | The live terminal view. |
 | `demo.py` | A ladder proportioned to the host, plus the memory-pressure generator. |
+| `daemon.py` | Detached start/stop, PID tracking, and stopping *cleanly* so transparent mode unwinds. |
 
 ### The decision policy
 
@@ -158,12 +159,16 @@ Then:
 
 ```bash
 ramp doctor    # check this machine can run it, and what to fix if not
-ramp           # start, with an auto-detected ladder
+ramp           # start it in the background, with an auto-detected ladder
 ramp status    # what's loaded, why, and what it's costing
 ramp watch     # live view of the ladder moving
+ramp stop      # stop it
 ```
 
-`ramp` prints the endpoint to point your tools at. That's the whole setup.
+`ramp` runs as a daemon: it detaches, prints the endpoint to point your tools
+at, and gives you your terminal back. Logs go to a file rather than your
+screen. Use `ramp run` if you want it in the foreground instead (that is what
+the Docker image does).
 
 <details>
 <summary>Other commands</summary>
@@ -174,7 +179,8 @@ ramp ask "hello"           # send one message, see which tier answered
 ramp stress                # fill memory to watch the ladder react
 ramp init                  # write the auto-detected ladder to ramp.yaml to tune
 ramp run -c ramp.yaml      # start from an explicit config
-ramp run --transparent     # serve on Ollama's port so existing tools just work
+ramp start --transparent   # serve on the model server's port; existing tools just work
+ramp run                   # foreground instead of detaching (Docker, debugging)
 ramp restore               # undo transparent mode after an unclean shutdown
 ramp status --json         # raw status for scripting
 ramp --help

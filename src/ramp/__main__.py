@@ -20,7 +20,7 @@ import psutil
 import uvicorn
 import yaml
 
-from . import __version__, transparent
+from . import __version__, daemon, transparent
 from .autoconfig import AutoConfigError, autodetect, describe
 from .backend import make_backend
 from .config import Config, ConfigError
@@ -234,6 +234,84 @@ def cmd_watch(args) -> int:
         return 0
 
 
+def cmd_start(args) -> int:
+    """Start the daemon in the background and hand the terminal back."""
+    existing = daemon.running()
+    if existing is not None and daemon.responding(existing.get("url", "")):
+        print(f"{_c('Already running', '33')} (pid {existing['pid']}) at "
+              f"{existing.get('url')}")
+        print("  ramp status   ramp watch   ramp stop")
+        return 0
+
+    port = args.port or DEFAULT_PORT
+    url = f"http://{args.host or '127.0.0.1'}:{port}"
+
+    # Pass this invocation through to a foreground `ramp run`.
+    passthrough = ["--port", str(port)]
+    if args.host:
+        passthrough += ["--host", args.host]
+    if args.config:
+        passthrough += ["--config", os.path.abspath(args.config)]
+    if args.ollama_url:
+        passthrough += ["--ollama-url", args.ollama_url]
+    if getattr(args, "transparent", False):
+        # Consent belongs to the human, so it is taken here, before detaching.
+        passthrough += ["--transparent", "--yes",
+                        "--transparent-port", str(args.transparent_port),
+                        "--relocate-port", str(args.relocate_port)]
+        url = f"http://127.0.0.1:{args.transparent_port}"
+        if not _confirm_transparent_upfront(args):
+            return 1
+
+    print("Starting RAMP in the background...")
+    try:
+        pid, log = daemon.spawn(daemon.foreground_argv(passthrough), url)
+    except RuntimeError as e:
+        print(f"{_c('Failed to start:', '31')} {e}", file=sys.stderr)
+        return 1
+
+    print(f"{_c('RAMP is running', '32')} (pid {pid}) on {_c(url + '/v1', '36')}")
+    print("  point any OpenAI-compatible client at that URL")
+    print()
+    print(f"  {_c('ramp status', '36')}   what is loaded and why")
+    print(f"  {_c('ramp watch', '36')}    live view")
+    print(f"  {_c('ramp stop', '36')}     stop it")
+    print()
+    print(f"  logs: {log}")
+    return 0
+
+
+def _confirm_transparent_upfront(args) -> bool:
+    """Show the transparent-mode plan and get consent before detaching.
+
+    Asking after the process has detached would be asking nobody.
+    """
+    try:
+        p = transparent.plan(
+            target_port=args.transparent_port,
+            relocate_port=args.relocate_port,
+            ollama_bin=args.ollama_bin,
+        )
+    except transparent.TransparentModeError as e:
+        print(f"{_c('Transparent mode unavailable:', '31')} {e}", file=sys.stderr)
+        return False
+    print()
+    print(_c("Transparent mode", "1"))
+    print()
+    print(p.describe())
+    print()
+    if not _confirm("Put RAMP in front of it?", args.yes):
+        print("Left everything as it was.")
+        return False
+    return True
+
+
+def cmd_stop(args) -> int:
+    for note in daemon.stop():
+        print(f"  {note}")
+    return 0
+
+
 def cmd_restore(args) -> int:
     """Undo a transparent-mode arrangement left behind by an earlier run."""
     for note in transparent.repair():
@@ -299,9 +377,18 @@ def _serve(args) -> int:
           f"({len(cfg.tiers)} tiers, {cfg.backend} backend)")
     print(f"     status: {url}/ramp/status     metrics: {url}/ramp/metrics")
     print("     point any OpenAI-compatible client at the /v1 URL above.\n")
-    uvicorn.run(
-        app, host=cfg.listen_host, port=cfg.listen_port, log_level=args.log_level
+    # A Server object rather than uvicorn.run(), so /ramp/shutdown can ask
+    # it to exit cleanly - which is what lets transparent mode unwind.
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=cfg.listen_host,
+            port=cfg.listen_port,
+            log_level=args.log_level,
+        )
     )
+    app.state.server = server
+    server.run()
     return 0
 
 
@@ -450,6 +537,20 @@ def build_parser() -> argparse.ArgumentParser:
                      help="seconds to hold before releasing (default: %(default)s)")
     stz.set_defaults(func=cmd_stress)
 
+    sta = common(sub.add_parser("start", help="run in the background (default)"))
+    sta.add_argument("--config", "-c", help="config file (default: ./ramp.yaml, else auto-detect)")
+    sta.add_argument("--host", default=None)
+    sta.add_argument("--transparent", action="store_true",
+                     help="serve on the model server's own port (asks first)")
+    sta.add_argument("--transparent-port", type=int, default=11434)
+    sta.add_argument("--relocate-port", type=int, default=11435)
+    sta.add_argument("--ollama-bin", default="ollama")
+    sta.add_argument("--yes", "-y", action="store_true")
+    sta.set_defaults(func=cmd_start)
+
+    stp = sub.add_parser("stop", help="stop the background daemon")
+    stp.set_defaults(func=cmd_stop)
+
     wat = sub.add_parser("watch", help="live view of the ladder as it moves")
     wat.add_argument("--url", default=f"http://127.0.0.1:{DEFAULT_PORT}")
     wat.add_argument("--interval", type=float, default=1.0,
@@ -473,9 +574,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     argv = sys.argv[1:]
-    # Bare `ramp` means `ramp run`, so the zero-config path is one word.
+    # Bare `ramp` starts the daemon in the background. `ramp run` is the
+    # explicit foreground form, used by `ramp start` itself and by Docker.
     if not argv or (argv[0].startswith("-") and argv[0] not in ("--version", "-h", "--help")):
-        argv = ["run", *argv]
+        argv = ["start", *argv]
     args = parser.parse_args(argv)
     if not hasattr(args, "func"):
         parser.print_help()

@@ -6,6 +6,29 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-27
+
+### Added
+
+- **RAMP now actually behaves like a daemon.** `ramp` starts it in the
+  background and hands your terminal back, printing the endpoint and where
+  the logs went instead of filling the screen with uvicorn output. You look
+  at it afterwards with `ramp status`, `ramp watch` or `ramp doctor`.
+- **`ramp stop`**, which stops it *gracefully*. That matters more than it
+  sounds: transparent mode has moved someone's model server to another port,
+  and only an orderly shutdown puts it back. `stop` asks over a new
+  `POST /ramp/shutdown` endpoint, waits, and only kills as a fallback -
+  running the same repair `ramp restore` performs when it has to.
+- `ramp start --transparent` asks for consent **before** detaching, since
+  asking afterwards would be asking nobody.
+
+### Changed
+
+- **Bare `ramp` now means `ramp start` (background), not `ramp run`
+  (foreground).** `ramp run` is still there and unchanged - it is what
+  `ramp start` invokes internally, what the Docker image uses, and what you
+  want when debugging.
+
 ## [0.5.3] - 2026-08-27
 
 ### Fixed
@@ -209,7 +232,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.0
 [0.5.3]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.3
 [0.5.2]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.2
 [0.5.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.1
