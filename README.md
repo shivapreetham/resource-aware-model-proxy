@@ -88,10 +88,17 @@ flowchart LR
 | Module | Role |
 |---|---|
 | `monitor.py` | Samples available RAM, GPU/VRAM (NVIDIA, via `nvidia-smi`), and free disk — each with raw + smoothed readings. |
-| `policy.py` | Pure state machine: fast downgrades under pressure, slow damped upgrades, critical-floor emergency handling. Fully unit-tested, no I/O. |
-| `controller.py` | Executes decisions: drain in-flight requests → stop old backend → start new → reopen the gate. Restarts crashed backends. Records an event log. |
-| `backend.py` | Child-process lifecycle for `llama-server` (real) or `ramp.mock_llm` (demo/tests). |
-| `server.py` | OpenAI-compatible passthrough (incl. SSE streaming) + control API. |
+| `policy.py` | Pure state machine: fast downgrades under pressure, slow damped upgrades, critical-floor handling, cooldown. Fully unit-tested, no I/O. |
+| `controller.py` | Executes decisions: drain in-flight requests → stop old backend → start new → reopen the gate. Restarts a dead backend. Records an event log. |
+| `backend.py` | Lifecycle for the thing serving a tier: `llama-server`, Ollama (load/unload via `keep_alive`), or the mock server. |
+| `server.py` | OpenAI-compatible passthrough (incl. SSE streaming), Ollama-native `/api/*`, CORS, and the control API. |
+| `runtimes.py` | Identifies what is on a port (Ollama / llama.cpp / LM Studio) and how to relaunch it elsewhere. |
+| `transparent.py` | Stepping in front of an existing server, with rollback and crash repair. |
+| `autoconfig.py` | Builds a tier ladder by inspecting the machine and its installed models. |
+| `doctor.py` | Environment checks, each with the command that fixes it. |
+| `metrics.py` | Swap rate, occupancy, request and overhead telemetry; Prometheus exposition. |
+| `watch.py` | The live terminal view. |
+| `demo.py` | A ladder proportioned to the host, plus the memory-pressure generator. |
 
 ### The decision policy
 

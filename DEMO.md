@@ -82,7 +82,19 @@ answered by: big-model
 
 Plenty of memory free, so you got the **big** one.
 
-### 3. Now squeeze the memory
+### 3. Watch it live (the good bit)
+
+Open a **third** terminal and leave this running:
+
+```
+ramp watch
+```
+
+You get a live picture that repaints every second — the active tier, memory
+bars, and every switch with the reason for it. Keep an eye on it while you do
+the next step.
+
+### 4. Now squeeze the memory
 
 ```
 ramp stress
@@ -91,7 +103,8 @@ ramp stress
 This fills up your RAM for 45 seconds and then releases it. Nothing
 permanent — it's just a big empty list your computer reclaims instantly.
 
-**While it's running**, in your second terminal:
+**While it's running**, watch the tier drop in `ramp watch` — or ask again
+from your second terminal:
 
 ```
 ramp ask hello
@@ -105,12 +118,12 @@ answered by: small-model
 
 Nobody reconfigured anything. RAMP noticed the squeeze and stepped down.
 
-### 4. Watch it recover
+### 5. Watch it recover
 
 `ramp stress` releases the memory after 45 seconds. Wait about 20 seconds
 more, then ask again — you're back to `[big-model]`.
 
-### 5. See the whole story
+### 6. See the whole story
 
 ```
 ramp status
@@ -195,7 +208,7 @@ answered.
 ramp stress --hold 60
 ```
 
-Then, while that runs, ask something else. **A genuinely smaller AI model
+Then, while that runs, watch `ramp watch` or ask something else. **A genuinely smaller AI model
 answers you** — and when memory frees up, the bigger one comes back.
 
 That's the whole idea: you keep the good model when you can afford it, and

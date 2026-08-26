@@ -6,6 +6,15 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-27
+
+### Changed
+
+- Documentation brought level with the code. The README's module table had
+  drifted to cover 5 of 16 modules; it now describes all of them. `DEMO.md`
+  features `ramp watch`, which is the clearest way to actually see the
+  ladder move, and the walkthrough is renumbered around it.
+
 ## [0.5.0] - 2026-08-27
 
 ### Added
@@ -176,7 +185,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.1
 [0.5.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.3.0
