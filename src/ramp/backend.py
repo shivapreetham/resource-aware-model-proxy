@@ -19,6 +19,7 @@ import os
 import socket
 import subprocess
 import sys
+from urllib.parse import urlparse
 
 import httpx
 
@@ -184,11 +185,26 @@ class OllamaBackend:
     def serving_model(self) -> str | None:
         return self.tier.model if self.tier is not None else None
 
+    def _endpoint(self) -> tuple[str, int]:
+        parsed = urlparse(self.base_url)
+        return parsed.hostname or "127.0.0.1", parsed.port or 11434
+
     def alive(self) -> bool:
+        """Is the Ollama we proxy to actually reachable?
+
+        Owning the process is not the same as it being up, and in transparent
+        mode RAMP does not own it at all - the relocated server was started by
+        the transparent module. Trusting ``proc`` there meant a dead upstream
+        was reported healthy forever and every request 502'd with no recovery.
+        So probe the socket instead. On localhost this is immediate whether it
+        is up (connect) or down (refused).
+        """
         if self.tier is None:
             return False
-        # If we own the server process, its death means we're down.
-        return self.proc is None or self.proc.returncode is None
+        host, port = self._endpoint()
+        with socket.socket() as s:
+            s.settimeout(0.3)
+            return s.connect_ex((host, port)) == 0
 
     async def _ensure_server(self) -> None:
         async with httpx.AsyncClient() as client:
@@ -198,14 +214,21 @@ class OllamaBackend:
                     return
             except httpx.HTTPError:
                 pass
+            host, port = self._endpoint()
             log.info("no ollama server at %s; spawning 'ollama serve'", self.base_url)
             kwargs = {}
             if os.name == "nt":
                 kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            # Bind where we are actually proxying. Without this, recovery in
+            # transparent mode would try the default port - which RAMP itself
+            # is holding - and fail forever.
+            env = dict(os.environ)
+            env["OLLAMA_HOST"] = f"{host}:{port}"
             self.proc = await asyncio.create_subprocess_exec(
                 self.cfg.ollama_bin, "serve",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
+                env=env,
                 **kwargs,
             )
             loop = asyncio.get_running_loop()

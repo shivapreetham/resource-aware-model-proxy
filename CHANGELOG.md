@@ -6,6 +6,32 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-27
+
+### Added
+
+- **`ramp watch`** - a live view of the ladder as it moves: current tier,
+  RAM/VRAM/disk bars, swap rate, RAMP's own overhead, and recent switches
+  with the reason for each. Plain repainted text, no curses, so it works
+  over SSH and in a recording.
+
+### Fixed
+
+- **The upstream server dying went unnoticed.** The Ollama backend reported
+  health from its own process handle, but in transparent mode RAMP never
+  owns that process - the transparent module starts it - so `proc` is None
+  and a dead server read as healthy *forever*, with every request 502'ing
+  and no recovery. It now probes the socket instead, which lets the existing
+  crash-recovery path do its job.
+
+  Verified by killing Ollama out from under a running RAMP: noticed in ~5s,
+  respawned, tier reloaded, serving again.
+
+- **Recovery used the wrong port.** Respawning `ollama serve` inherited the
+  default `OLLAMA_HOST`, so in transparent mode it tried to bind the port
+  RAMP itself was holding and could never come back. It now binds whatever
+  URL RAMP is actually proxying to.
+
 ## [0.4.0] - 2026-08-26
 
 ### Added
@@ -150,7 +176,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.3.0
 [0.2.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.1

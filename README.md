@@ -43,6 +43,10 @@ back on its own port when RAMP exits. If it can't do all that safely, it
 refuses and changes nothing. Should RAMP ever be killed outright, `ramp
 restore` puts Ollama back.
 
+RAMP also supervises the server it proxies to: if that server dies, RAMP
+notices within a poll and brings it back, so it stays in front until you
+stop it.
+
 > **Just want to see it work?** [DEMO.md](DEMO.md) walks through a live
 > demo in 5 minutes with no models to download.
 >
@@ -149,6 +153,7 @@ Then:
 ramp doctor    # check this machine can run it, and what to fix if not
 ramp           # start, with an auto-detected ladder
 ramp status    # what's loaded, why, and what it's costing
+ramp watch     # live view of the ladder moving
 ```
 
 `ramp` prints the endpoint to point your tools at. That's the whole setup.

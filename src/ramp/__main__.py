@@ -29,6 +29,7 @@ from .demo import demo_config, stress
 from .doctor import run_checks, worst
 from .monitor import ResourceMonitor
 from .server import create_app
+from .watch import supports_color, watch
 
 DEFAULT_CONFIG_NAMES = ("ramp.yaml", "ramp.yml")
 DEFAULT_PORT = 8090
@@ -222,6 +223,15 @@ def cmd_stress(args) -> int:
     except KeyboardInterrupt:
         print("\nreleased early.")
     return 0
+
+
+def cmd_watch(args) -> int:
+    """Live view of the ladder moving."""
+    try:
+        return watch(args.url, interval=args.interval, color=supports_color())
+    except KeyboardInterrupt:
+        print()
+        return 0
 
 
 def cmd_restore(args) -> int:
@@ -439,6 +449,12 @@ def build_parser() -> argparse.ArgumentParser:
     stz.add_argument("--hold", type=float, default=45.0,
                      help="seconds to hold before releasing (default: %(default)s)")
     stz.set_defaults(func=cmd_stress)
+
+    wat = sub.add_parser("watch", help="live view of the ladder as it moves")
+    wat.add_argument("--url", default=f"http://127.0.0.1:{DEFAULT_PORT}")
+    wat.add_argument("--interval", type=float, default=1.0,
+                     help="seconds between refreshes (default: %(default)s)")
+    wat.set_defaults(func=cmd_watch)
 
     res = sub.add_parser(
         "restore",
