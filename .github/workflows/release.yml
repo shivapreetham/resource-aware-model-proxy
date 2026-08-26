@@ -33,6 +33,15 @@ jobs:
           fi
           echo "releasing $VER"
 
+      # A release must not be able to ship a red suite. Without this gate,
+      # v0.4.0 through v0.5.1 published to PyPI while CI was failing - the
+      # build succeeded, so nothing stopped them.
+      - name: Test before publishing
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+          ruff check src tests scripts
+
       - run: pip install build && python -m build
 
       - name: Install the wheel in a clean env and smoke-test it

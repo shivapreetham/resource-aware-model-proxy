@@ -6,6 +6,19 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-27
+
+### Fixed
+
+- **A release could publish while CI was failing.** The release workflow
+  built the package and smoke-tested the installed command, but never ran
+  the test suite - so nothing stopped v0.4.0, v0.5.0 and v0.5.1 reaching
+  PyPI with a red CI. Publishing is now gated on `pytest` and `ruff`
+  passing.
+
+  The individual broken test was fixed in 0.5.2; this closes the hole that
+  let it ship three times.
+
 ## [0.5.2] - 2026-08-27
 
 ### Fixed
@@ -196,7 +209,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.3
 [0.5.2]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.2
 [0.5.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.1
 [0.5.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.0
