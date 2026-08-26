@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 
@@ -173,6 +174,31 @@ class Config:
             ema_alpha=float(raw.get("ema_alpha", 0.4)),
             cors_origins=[str(o) for o in raw.get("cors_origins", ["*"])],
         )
+
+    def validate(self) -> None:
+        """Catch arrangements that cannot possibly work, before binding.
+
+        Chiefly: RAMP proxying to itself. If the upstream URL names the port
+        RAMP listens on, requests would loop - and worse, the Ollama backend
+        would try to *start* a server on the port RAMP is about to bind, so
+        the daemon dies with an opaque "address already in use" instead of
+        saying what is actually wrong. That happened for real when
+        transparent mode relocated Ollama but a config file still pointed at
+        the old port.
+        """
+        if self.backend != "ollama":
+            return
+        parsed = urlparse(self.ollama_url)
+        upstream_port = parsed.port or 11434
+        upstream_host = parsed.hostname or "127.0.0.1"
+        local = {"127.0.0.1", "localhost", "::1", self.listen_host}
+        if upstream_port == self.listen_port and upstream_host in local:
+            raise ConfigError(
+                f"RAMP would listen on port {self.listen_port} and also use an "
+                f"Ollama at {self.ollama_url} - the same address, so it would "
+                "be proxying to itself. Point ollama_url at the port Ollama "
+                "actually serves on, or change listen.port."
+            )
 
     @staticmethod
     def load(path: str | Path) -> Config:

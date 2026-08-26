@@ -54,3 +54,55 @@ def test_bad_backend_rejected():
 def test_est_ram_required_positive():
     with pytest.raises(ConfigError):
         Config.from_dict({"backend": "mock", "tiers": [{"name": "a", "est_ram_mb": 0}]})
+
+
+# -- self-proxy guard ----------------------------------------------------
+#
+# Regression: transparent mode relocated Ollama to another port, but a
+# ramp.yaml in the working directory still named the old one. RAMP found
+# nothing there, started a *new* Ollama on the port it was about to bind,
+# and then died with "address already in use". The arrangement is now
+# rejected up front with an explanation.
+
+
+def test_proxying_to_our_own_port_is_rejected():
+    cfg = Config.from_dict({
+        "backend": "ollama",
+        "listen": {"port": 11434},
+        "ollama_url": "http://127.0.0.1:11434",
+        "tiers": [{"name": "t", "model": "m", "est_ram_mb": 100}],
+    })
+    with pytest.raises(ConfigError, match="proxying to itself"):
+        cfg.validate()
+
+
+def test_localhost_and_127_are_treated_as_the_same_host():
+    cfg = Config.from_dict({
+        "backend": "ollama",
+        "listen": {"host": "127.0.0.1", "port": 9000},
+        "ollama_url": "http://localhost:9000",
+        "tiers": [{"name": "t", "model": "m", "est_ram_mb": 100}],
+    })
+    with pytest.raises(ConfigError, match="proxying to itself"):
+        cfg.validate()
+
+
+def test_different_ports_are_fine():
+    cfg = Config.from_dict({
+        "backend": "ollama",
+        "listen": {"port": 11434},
+        "ollama_url": "http://127.0.0.1:11435",
+        "tiers": [{"name": "t", "model": "m", "est_ram_mb": 100}],
+    })
+    cfg.validate()
+
+
+def test_the_guard_only_applies_to_the_ollama_backend():
+    """Other backends spawn their own child on a free port, so sharing a
+    number with the listen port means nothing."""
+    cfg = Config.from_dict({
+        "backend": "mock",
+        "listen": {"port": 11434},
+        "tiers": [{"name": "t", "est_ram_mb": 100}],
+    })
+    cfg.validate()

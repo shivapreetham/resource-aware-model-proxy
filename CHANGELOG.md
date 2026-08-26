@@ -6,6 +6,23 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-27
+
+### Fixed
+
+- **Transparent mode failed to start when a `ramp.yaml` was present.**
+  Relocating the model server sets the upstream URL, but that override was
+  only applied to the auto-detected path - a config file's `ollama_url` won.
+  So RAMP kept pointing at the port the server had just left, found nothing
+  there, started a *new* Ollama on the very port RAMP was about to bind, and
+  died with `[Errno 10048] only one usage of each socket address`. CLI
+  overrides now win over the file, as `--host` and `--port` already did.
+
+- **Added a guard for the same class of mistake.** A configuration where
+  RAMP listens on the port it also proxies to is now rejected at startup
+  with an explanation, instead of surfacing as an opaque bind failure. Hand
+  -written configs can hit this too.
+
 ## [0.6.0] - 2026-08-27
 
 ### Added
@@ -232,7 +249,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.1
 [0.6.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.0
 [0.5.3]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.3
 [0.5.2]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.2

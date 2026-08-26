@@ -106,6 +106,13 @@ def _resolve_config(args) -> Config:
         cfg.listen_host = args.host
     if args.port:
         cfg.listen_port = args.port
+    # Transparent mode relocates the upstream, so the URL it set must win
+    # over a config file too. Missing this meant RAMP kept the file's URL,
+    # found nothing there (the server had just moved), started a *new* one
+    # on the very port it was about to bind, and then failed to bind it.
+    if getattr(args, "ollama_url_override", None):
+        cfg.ollama_url = args.ollama_url_override
+    cfg.validate()
     return cfg
 
 
@@ -344,9 +351,10 @@ def cmd_run(args) -> int:
         state = _engage_transparent(args)
         if state is None:
             return 1
-        # Serve on the port we just claimed, talking to the relocated Ollama.
+        # Serve on the port we just claimed, talking to the relocated server.
         args.port = state.plan.target_port
         args.ollama_url = f"http://127.0.0.1:{state.plan.relocate_port}"
+        args.ollama_url_override = args.ollama_url
 
     try:
         return _serve(args)
