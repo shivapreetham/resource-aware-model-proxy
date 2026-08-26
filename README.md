@@ -28,18 +28,19 @@ That's the entire integration. Verified against the official `openai` Python
 SDK: model listing, streaming, and hard-coded model names all work untouched.
 Ollama's native `/api/*` routes are proxied too, for tools that use those.
 
-**Or change nothing at all.** `ramp run --takeover` puts RAMP *on* Ollama's
+**Or change nothing at all.** `ramp run --transparent` puts RAMP *on* Ollama's
 port and moves Ollama behind it, so every tool you already have routes
 through RAMP without touching a single config:
 
 ```bash
-ramp run --takeover
+ramp run --transparent
 ```
 
 It asks before doing it, starts the relocated Ollama and proves it healthy
 *before* stopping the original, rolls back on any failure, and puts Ollama
 back on its own port when RAMP exits. If it can't do all that safely, it
-refuses and changes nothing.
+refuses and changes nothing. Should RAMP ever be killed outright, `ramp
+restore` puts Ollama back.
 
 > **New here?** [docs/CONCEPTS.md](docs/CONCEPTS.md) explains what's actually
 > going on: what consumes memory when an LLM runs, why VRAM pressure silently
@@ -154,6 +155,8 @@ ramp status    # what's loaded, why, and what it's costing
 ```bash
 ramp init                  # write the auto-detected ladder to ramp.yaml to tune
 ramp run -c ramp.yaml      # start from an explicit config
+ramp run --transparent     # serve on Ollama's port so existing tools just work
+ramp restore               # undo transparent mode after an unclean shutdown
 ramp status --json         # raw status for scripting
 ramp --help
 ```

@@ -6,11 +6,29 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-08-26
+
+### Changed
+
+- Renamed `--takeover` to `--transparent`. "Transparent proxy" is both the
+  accurate term and a fairer description of something that asks permission
+  and reverses itself.
+
+### Fixed
+
+- **Transparent mode could leave Ollama down.** Restoring only happened on a
+  clean exit, so a hard kill or crash skipped it entirely and left Ollama
+  moved with nothing on its usual port. Found by killing a live session. The
+  arrangement is now written to disk when engaged, `ramp restore` puts Ollama
+  back, and `ramp` warns on startup if a previous session did not shut down
+  cleanly. Repair is idempotent and will not start a second Ollama if one is
+  already answering.
+
 ## [0.2.0] — 2026-08-26
 
 ### Added
 
-- **Transparent takeover** (`ramp run --takeover`). RAMP can occupy Ollama's
+- **Transparent mode** (`ramp run --transparent`). RAMP can serve on Ollama's
   port and relocate Ollama behind it, so every tool already pointed at
   `localhost:11434` routes through RAMP with **no client configuration at
   all** — including tools using Ollama's native `/api/*` routes, not just
@@ -27,13 +45,13 @@ All notable changes to RAMP are documented here. This project follows
     found to restart it with.
   - Restores Ollama to its original port automatically when RAMP exits.
 
-  Configurable via `--takeover-port`, `--relocate-port`, and `--ollama-bin`.
+  Configurable via `--transparent-port`, `--relocate-port`, and `--ollama-bin`.
 
 ### Known limitations
 
-- Takeover's success path has been exercised by unit tests but not yet on a
+- Transparent mode's success path has been exercised by unit tests but not yet on a
   machine where Ollama runs as a managed service or tray app, which may
-  restart Ollama automatically and reclaim the port. Takeover detects this
+  restart Ollama automatically and reclaim the port. Transparent mode detects this
   and rolls back rather than leaving a broken state.
 
 ## [0.1.0] — 2026-08-26
@@ -77,6 +95,7 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.1
 [0.2.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.1.0

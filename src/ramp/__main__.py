@@ -19,7 +19,7 @@ import urllib.request
 import uvicorn
 import yaml
 
-from . import __version__, takeover
+from . import __version__, transparent
 from .autoconfig import AutoConfigError, autodetect, describe
 from .backend import make_backend
 from .config import Config, ConfigError
@@ -111,7 +111,7 @@ def _confirm(question: str, assume_yes: bool) -> bool:
         return True
     if not sys.stdin.isatty():
         print(
-            f"{_c('Refusing:', '31')} takeover needs confirmation, but this isn't "
+            f"{_c('Refusing:', '31')} transparent mode needs confirmation, but this isn't "
             "an interactive terminal. Pass --yes if you're sure.",
             file=sys.stderr,
         )
@@ -123,31 +123,31 @@ def _confirm(question: str, assume_yes: bool) -> bool:
         return False
 
 
-def _do_takeover(args) -> takeover.TakeoverState | None:
-    """Ask, then take over Ollama's port. Returns None if declined/impossible."""
+def _engage_transparent(args) -> transparent.TransparentState | None:
+    """Ask, then step in front of Ollama. Returns None if declined/impossible."""
     try:
-        p = takeover.plan(
-            target_port=args.takeover_port,
+        p = transparent.plan(
+            target_port=args.transparent_port,
             relocate_port=args.relocate_port,
             ollama_bin=args.ollama_bin,
         )
-    except takeover.TakeoverError as e:
-        print(f"{_c('Takeover not possible:', '31')} {e}", file=sys.stderr)
+    except transparent.TransparentModeError as e:
+        print(f"{_c('Transparent mode unavailable:', '31')} {e}", file=sys.stderr)
         print("Nothing was changed.", file=sys.stderr)
         return None
 
-    print(f"\n{_c('Transparent takeover', '1')}\n")
+    print(f"\n{_c('Transparent mode', '1')}\n")
     print(p.describe())
     print()
-    if not _confirm("Take over the port?", args.yes):
-        print("Left everything as it was. Run without --takeover to use "
+    if not _confirm("Put RAMP in front of Ollama?", args.yes):
+        print("Left everything as it was. Run without --transparent to use "
               "RAMP's own port instead.")
         return None
 
     try:
-        state = takeover.execute(p)
-    except takeover.TakeoverError as e:
-        print(f"\n{_c('Takeover failed:', '31')} {e}", file=sys.stderr)
+        state = transparent.engage(p)
+    except transparent.TransparentModeError as e:
+        print(f"\n{_c('Could not enable transparent mode:', '31')} {e}", file=sys.stderr)
         print("Rolled back - Ollama is as you left it.", file=sys.stderr)
         return None
 
@@ -156,15 +156,36 @@ def _do_takeover(args) -> takeover.TakeoverState | None:
     return state
 
 
+def cmd_restore(args) -> int:
+    """Undo a transparent-mode arrangement left behind by an earlier run."""
+    for note in transparent.repair():
+        print(f"  {note}")
+    return 0
+
+
+def _warn_if_stale() -> None:
+    """A previous run may have been killed before it could restore Ollama."""
+    saved = transparent.load_state()
+    if saved is None:
+        return
+    port = saved.get("target_port", 11434)
+    print(
+        f"{_c('Note:', '33')} a previous transparent-mode session did not shut "
+        f"down cleanly, so Ollama may still be moved off port {port}.\n"
+        f"      Run 'ramp restore' to put it back.\n"
+    )
+
+
 def cmd_run(args) -> int:
     logging.basicConfig(
         level=args.log_level.upper(),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+    _warn_if_stale()
 
     state = None
-    if getattr(args, "takeover", False):
-        state = _do_takeover(args)
+    if getattr(args, "transparent", False):
+        state = _engage_transparent(args)
         if state is None:
             return 1
         # Serve on the port we just claimed, talking to the relocated Ollama.
@@ -176,7 +197,7 @@ def cmd_run(args) -> int:
     finally:
         if state is not None:
             print("\nRestoring Ollama...")
-            for note in takeover.restore(state):
+            for note in transparent.restore(state):
                 print(f"  {note}")
 
 
@@ -311,18 +332,18 @@ def build_parser() -> argparse.ArgumentParser:
                      help="address to bind (default: 127.0.0.1; use 0.0.0.0 in containers)")
     run.add_argument("--log-level", default="info")
     run.add_argument(
-        "--takeover", action="store_true",
-        help="occupy Ollama's port and relocate Ollama behind RAMP, so every "
-             "existing tool routes through it with no client changes (asks first)",
+        "--transparent", action="store_true",
+        help="serve on Ollama's port and move Ollama behind RAMP, so existing "
+             "tools route through it with no client changes (asks first)",
     )
-    run.add_argument("--takeover-port", type=int, default=11434,
-                     help="port to take over (default: %(default)s, Ollama's)")
+    run.add_argument("--transparent-port", type=int, default=11434,
+                     help="port to serve on (default: %(default)s, Ollama's)")
     run.add_argument("--relocate-port", type=int, default=11435,
-                     help="where Ollama is moved to (default: %(default)s)")
+                     help="where Ollama moves to (default: %(default)s)")
     run.add_argument("--ollama-bin", default="ollama",
                      help="path to the ollama binary, if not on PATH")
     run.add_argument("--yes", "-y", action="store_true",
-                     help="skip the takeover confirmation prompt")
+                     help="skip the confirmation prompt")
     run.set_defaults(func=cmd_run)
 
     doc = common(sub.add_parser("doctor", help="check this machine can run RAMP"))
@@ -333,6 +354,12 @@ def build_parser() -> argparse.ArgumentParser:
     ini.add_argument("--output", "-o", default="ramp.yaml")
     ini.add_argument("--force", action="store_true", help="overwrite an existing file")
     ini.set_defaults(func=cmd_init)
+
+    res = sub.add_parser(
+        "restore",
+        help="put Ollama back on its own port after a transparent-mode session",
+    )
+    res.set_defaults(func=cmd_restore)
 
     st = sub.add_parser("status", help="query a running daemon")
     st.add_argument("--url", default="http://127.0.0.1:8090")
