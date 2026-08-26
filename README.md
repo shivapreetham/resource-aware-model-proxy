@@ -28,9 +28,10 @@ That's the entire integration. Verified against the official `openai` Python
 SDK: model listing, streaming, and hard-coded model names all work untouched.
 Ollama's native `/api/*` routes are proxied too, for tools that use those.
 
-**Or change nothing at all.** `ramp run --transparent` puts RAMP *on* Ollama's
-port and moves Ollama behind it, so every tool you already have routes
-through RAMP without touching a single config:
+**Or change nothing at all.** `ramp run --transparent` puts RAMP *on* the port
+your model server already uses and moves that server behind it, so every tool
+you already have routes through RAMP without touching a single config. Works
+with **Ollama, llama.cpp (llama-server), and LM Studio**:
 
 ```bash
 ramp run --transparent

@@ -33,7 +33,7 @@ def free_port() -> int:
 
 def test_refuses_when_nothing_is_on_the_target_port():
     """Taking a port nobody uses is pointless - just bind it directly."""
-    with pytest.raises(TransparentModeError, match="nothing that looks like Ollama"):
+    with pytest.raises(TransparentModeError, match="nothing is answering"):
         transparent.plan(target_port=free_port())
 
 
@@ -44,12 +44,13 @@ def test_refuses_when_relocation_port_is_occupied(monkeypatch, busy_port):
         transparent.plan(target_port=11434, relocate_port=busy_port)
 
 
-def test_refuses_when_ollama_binary_is_missing(monkeypatch):
-    """Without the binary we could stop Ollama and never restart it."""
-    monkeypatch.setattr(transparent, "_probe", lambda *a, **k: "0.0.0-test")
+def test_refuses_when_the_binary_to_restart_with_is_missing(monkeypatch):
+    """Without a way to relaunch it we could stop the server for good."""
+    monkeypatch.setattr(transparent.runtimes, "identify",
+                        lambda *a, **k: transparent.runtimes.OLLAMA)
     monkeypatch.setattr(transparent, "_port_free", lambda *a, **k: True)
-    monkeypatch.setattr(transparent, "find_ollama_binary", lambda *a, **k: None)
-    with pytest.raises(TransparentModeError, match="couldn't find the ollama binary"):
+    monkeypatch.setattr(transparent, "find_binary_for", lambda *a, **k: None)
+    with pytest.raises(TransparentModeError, match="can't work out how to start it again"):
         transparent.plan()
 
 
@@ -184,8 +185,8 @@ def test_repair_restarts_ollama_and_clears_state(monkeypatch, tmp_path):
     monkeypatch.setattr(transparent, "_probe", lambda *a, **k: None)
     restarted = []
     monkeypatch.setattr(
-        transparent, "_restart_on",
-        lambda b, port, **k: (restarted.append((b, port)), ["restarted"])[1],
+        transparent, "_restart_with",
+        lambda argv, env, port, **k: (restarted.append((argv[0], port)), ["restarted"])[1],
     )
 
     notes = transparent.repair()
@@ -211,7 +212,7 @@ def test_repair_does_not_restart_when_ollama_is_already_back(monkeypatch, tmp_pa
     monkeypatch.setattr(transparent, "find_serving_processes", lambda _p: [])
     monkeypatch.setattr(transparent, "_probe", lambda *a, **k: "0.32.0")
     called = []
-    monkeypatch.setattr(transparent, "_restart_on",
+    monkeypatch.setattr(transparent, "_restart_with",
                         lambda *a, **k: called.append(1) or [])
 
     notes = transparent.repair()

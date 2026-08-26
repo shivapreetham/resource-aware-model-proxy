@@ -17,6 +17,7 @@ from typing import Literal
 
 import psutil
 
+from . import runtimes
 from .autoconfig import AutoConfigError, fetch_ollama_models
 from .config import Config, ConfigError
 from .monitor import ResourceMonitor
@@ -124,6 +125,40 @@ def check_ollama(url: str = "http://127.0.0.1:11434") -> list[Check]:
     return [server, Check("Ollama models", "ok", detail)]
 
 
+
+def check_runtimes() -> Check:
+    """What model servers are running, and can transparent mode use them?
+
+    Transparent mode only works against a server RAMP can identify *and*
+    restart, so this reports both facts rather than just "something is
+    listening".
+    """
+    found = []
+    for rt in runtimes.ALL:
+        detected = runtimes.identify(rt.default_port, timeout=1.5)
+        if detected is not None:
+            found.append((detected, rt.default_port))
+
+    if not found:
+        return Check(
+            "Model servers", "warn",
+            "none detected on the usual ports "
+            f"({', '.join(str(r.default_port) for r in runtimes.ALL)})",
+            "Transparent mode needs one running. Start Ollama, llama-server, "
+            "or LM Studio - or skip it and point clients at RAMP directly.",
+        )
+
+    desc = ", ".join(f"{rt.label} on {port}" for rt, port in found)
+    unusable = [rt for rt, _ in found if not rt.relocatable]
+    if unusable:
+        return Check(
+            "Model servers", "warn", desc,
+            "Transparent mode can't relocate an unidentified server; use "
+            "RAMP's own port for that one.",
+        )
+    return Check("Model servers", "ok", f"{desc} (transparent mode supported)")
+
+
 def check_llama_server(binary: str = "llama-server") -> Check:
     found = shutil.which(binary)
     if found is None:
@@ -178,6 +213,7 @@ def run_checks(
 ) -> list[Check]:
     checks = [check_python(), check_memory(), check_gpu(), check_disk()]
     checks += check_ollama(ollama_url)
+    checks.append(check_runtimes())
     checks.append(check_llama_server())
     checks.append(check_port(port=port))
     cfg_check = check_config(config_path)

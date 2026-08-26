@@ -6,6 +6,39 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-26
+
+### Added
+
+- **Transparent mode now works with llama.cpp and LM Studio**, not just
+  Ollama. RAMP identifies what is actually on the port and relocates it the
+  way that runtime supports:
+  - Ollama via the `OLLAMA_HOST` environment variable,
+  - llama-server by relaunching the running process's **own argv** with the
+    port rewritten, since its model path and tuning flags cannot be
+    reconstructed from scratch,
+  - LM Studio via `lms server start --port`, and stopped with
+    `lms server stop` rather than by killing the process, because its server
+    belongs to the desktop app.
+- **`doctor` reports which model servers are running** and whether
+  transparent mode can use each one.
+
+### Changed
+
+- Identification is positive, never assumed. All of these speak the OpenAI
+  API on `/v1`, so that endpoint alone proves nothing; RAMP checks
+  runtime-specific endpoints (`/api/version`, `/api/v0/models`, `/props`) in
+  most-specific-first order. **An OpenAI-compatible server it cannot
+  identify is refused** rather than stopped, since RAMP would have no way to
+  start it again.
+
+### Known limitations
+
+- The llama.cpp and LM Studio paths are covered by unit tests but have
+  **not been run against those programs**; neither is installed on the
+  development machine. The Ollama path is verified live. All three refuse
+  safely when anything is missing.
+
 ## [0.3.0] - 2026-08-26
 
 ### Added
@@ -117,7 +150,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.3.0
 [0.2.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.1
 [0.2.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.0
