@@ -6,6 +6,17 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-27
+
+### Fixed
+
+- **A test depended on the author's machine.** When `plan()` moved to
+  `runtimes.identify` for multi-runtime support, one transparent-mode test
+  was left patching the old `_probe` seam. It passed locally only because a
+  real Ollama happened to be listening on port 11434, and failed on all
+  twelve CI jobs. Now hermetic - the suite passes with or without a model
+  server running.
+
 ## [0.5.1] - 2026-08-27
 
 ### Changed
@@ -185,7 +196,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.2
 [0.5.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.1
 [0.5.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.4.0

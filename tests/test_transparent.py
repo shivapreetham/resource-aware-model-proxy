@@ -38,8 +38,16 @@ def test_refuses_when_nothing_is_on_the_target_port():
 
 
 def test_refuses_when_relocation_port_is_occupied(monkeypatch, busy_port):
-    """Ollama must have somewhere to go, or we'd strand it."""
-    monkeypatch.setattr(transparent, "_probe", lambda *a, **k: "0.0.0-test")
+    """The incumbent must have somewhere to go, or we'd strand it.
+
+    Note the seam: plan() identifies the runtime via runtimes.identify, not
+    _probe. Patching the wrong one made this test quietly depend on a real
+    Ollama running on 11434 - it passed on the author's machine and failed
+    on every CI runner.
+    """
+    monkeypatch.setattr(transparent.runtimes, "identify",
+                        lambda *a, **k: transparent.runtimes.OLLAMA)
+    monkeypatch.setattr(transparent, "find_binary_for", lambda *a, **k: "/usr/bin/ollama")
     with pytest.raises(TransparentModeError, match="already in use"):
         transparent.plan(target_port=11434, relocate_port=busy_port)
 
