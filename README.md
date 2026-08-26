@@ -42,7 +42,10 @@ back on its own port when RAMP exits. If it can't do all that safely, it
 refuses and changes nothing. Should RAMP ever be killed outright, `ramp
 restore` puts Ollama back.
 
-> **New here?** [docs/CONCEPTS.md](docs/CONCEPTS.md) explains what's actually
+> **Just want to see it work?** [DEMO.md](DEMO.md) walks through a live
+> demo in 5 minutes with no models to download.
+>
+> **Want to know how it works?** [docs/CONCEPTS.md](docs/CONCEPTS.md) explains what's actually
 > going on: what consumes memory when an LLM runs, why VRAM pressure silently
 > becomes RAM pressure, and the control-theory ideas (hysteresis, damping)
 > behind the policy.
