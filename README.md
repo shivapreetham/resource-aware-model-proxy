@@ -154,15 +154,20 @@ The `mock` backend runs the whole daemon against fake OpenAI servers that tag
 their replies with the tier name — so you can watch the laddering behaviour
 in about thirty seconds, with nothing to download.
 
+The example configs live in this repo, so grab one first if you installed
+from PyPI:
+
 ```bash
-ramp run -c examples/ramp.mock.yaml
+curl -O https://raw.githubusercontent.com/shivapreetham/resource-aware-model-proxy/main/examples/ramp.mock.yaml
+curl -O https://raw.githubusercontent.com/shivapreetham/resource-aware-model-proxy/main/scripts/stress_ram.py
+ramp run -c ramp.mock.yaml
 ```
 
 Then, in another terminal:
 
 ```bash
 curl http://127.0.0.1:8090/ramp/status
-python scripts/stress_ram.py --mb 6000 --hold-s 60
+python stress_ram.py --mb 6000 --hold-s 60
 ```
 
 Watch the reply tag flip from `[large-mock]` to a smaller tier while the
