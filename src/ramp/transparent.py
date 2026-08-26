@@ -151,20 +151,22 @@ class TransparentPlan:
     relaunch: runtimes.Relaunch | None = None
 
     def describe(self) -> str:
+        """One line. A yes/no question does not need three paragraphs."""
+        return (
+            f"{self.runtime.label} moves to port {self.relocate_port}, "
+            f"RAMP takes {self.target_port}. Your tools keep working unchanged."
+        )
+
+    def details(self) -> str:
+        """The full mechanics, for --verbose or a bug report."""
         label = self.runtime.label
         how = self.relaunch.note if self.relaunch else "its usual command"
         pids = ", ".join(map(str, self.holders)) or "unknown"
         return (
-            f"RAMP would step in front of {label} on port {self.target_port}:\n"
-            f"  1. start {label} on port {self.relocate_port} "
-            f"({how}) and wait for it to be healthy\n"
-            f"  2. stop the one currently on {self.target_port} (pid {pids})\n"
-            f"  3. serve RAMP on {self.target_port}, forwarding to "
-            f"{self.relocate_port}\n\n"
-            f"Every tool pointed at localhost:{self.target_port} then flows "
-            f"through RAMP with no client changes. {label} keeps all its models "
-            f"and keeps working - it just moves one port over.\n"
-            f"Undone automatically when RAMP exits, or with 'ramp restore'."
+            f"  1. start {label} on {self.relocate_port} ({how}), wait for health\n"
+            f"  2. stop the one on {self.target_port} (pid {pids})\n"
+            f"  3. serve RAMP on {self.target_port}, forwarding to {self.relocate_port}\n"
+            f"  undo: automatic on exit, or 'ramp restore'"
         )
 
 

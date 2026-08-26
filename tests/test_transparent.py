@@ -134,13 +134,22 @@ def test_engage_starts_replacement_before_stopping_original(monkeypatch, tmp_pat
 
 # -- plan description ----------------------------------------------------
 
-def test_plan_describes_every_step_and_how_to_undo():
-    """The consent prompt has to be honest about what it will do."""
+def test_the_consent_prompt_is_one_short_line():
+    """A yes/no question should not be three paragraphs. The prompt names
+    both ports and what happens; the mechanics live in details()."""
     p = TransparentPlan(11434, 11435, "/usr/bin/ollama", "0.5.0", [42])
     text = p.describe()
     assert "11434" in text and "11435" in text
+    assert len(text) < 160, f"too long for a prompt: {len(text)} chars"
+    assert text.count(chr(10)) == 0, "should be a single line"
+
+
+def test_details_still_explain_every_step_and_the_undo():
+    """--verbose and bug reports need the full mechanics."""
+    p = TransparentPlan(11434, 11435, "/usr/bin/ollama", "0.5.0", [42])
+    text = p.details()
     assert "42" in text                      # names the process it will stop
-    assert "ramp restore" in text or "exits" in text   # says how to undo
+    assert "ramp restore" in text or "undo" in text
 
 
 def test_find_ollama_binary_prefers_path(monkeypatch):

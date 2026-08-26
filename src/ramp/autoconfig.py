@@ -154,14 +154,15 @@ def autodetect(ollama_url: str = "http://127.0.0.1:11434", port: int = 8090) -> 
 
 
 def describe(cfg: dict, total_vram_mb: float | None = None) -> str:
-    """Human-readable summary of an auto-detected config."""
-    lines = [
-        f"Auto-detected {len(cfg['tiers'])} tier(s) from Ollama "
-        f"(safety margin {cfg['safety_margin_mb']} MB"
-        + (f", {round(total_vram_mb)} MB VRAM" if total_vram_mb else "")
-        + "):"
-    ]
-    for i, t in enumerate(cfg["tiers"]):
-        vram = f", ~{t['est_vram_mb']} MB VRAM" if t.get("est_vram_mb") else ""
-        lines.append(f"  {i + 1}. {t['name']}  (~{t['est_ram_mb']} MB RAM{vram})")
+    """One line. `ramp status` is there for anyone who wants the numbers."""
+    names = " > ".join(t["name"] for t in cfg["tiers"])
+    return f"Ladder: {names}"
+
+
+def describe_verbose(cfg: dict) -> str:
+    lines = [f"Ladder ({len(cfg['tiers'])} tiers, "
+             f"margin {cfg['safety_margin_mb']} MB):"]
+    for t in cfg["tiers"]:
+        vram = f" + {t['est_vram_mb']} MB VRAM" if t.get("est_vram_mb") else ""
+        lines.append(f"  {t['name']}  ~{t['est_ram_mb']} MB RAM{vram}")
     return "\n".join(lines)

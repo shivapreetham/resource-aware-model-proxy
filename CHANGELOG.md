@@ -6,6 +6,22 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-08-27
+
+### Changed
+
+- **Much less output.** The transparent-mode consent prompt was 480
+  characters of explanation before a yes/no question; it is now one line of
+  80. Starting the daemon printed eight lines and now prints two. The
+  auto-detected ladder is one line instead of five. Detail did not
+  disappear - `-v/--verbose` shows it, and `ramp status` was always there.
+
+### Fixed
+
+- **Non-ASCII in terminal output.** A middle dot in the start message
+  rendered as a replacement character on Windows consoles, which default to
+  cp1252. All CLI output is ASCII now.
+
 ## [0.6.1] - 2026-08-27
 
 ### Fixed
@@ -249,7 +265,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.2
 [0.6.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.1
 [0.6.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.0
 [0.5.3]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.5.3

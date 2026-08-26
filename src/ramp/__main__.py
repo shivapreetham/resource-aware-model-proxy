@@ -21,7 +21,12 @@ import uvicorn
 import yaml
 
 from . import __version__, daemon, transparent
-from .autoconfig import AutoConfigError, autodetect, describe
+from .autoconfig import (
+    AutoConfigError,
+    autodetect,
+    describe,
+    describe_verbose,
+)
 from .backend import make_backend
 from .config import Config, ConfigError
 from .controller import Controller
@@ -95,8 +100,8 @@ def _resolve_config(args) -> Config:
         raw = autodetect(
             ollama_url=args.ollama_url, port=args.port or DEFAULT_PORT
         )
-        print(describe(raw))
-        print("\nTip: 'ramp init' writes this out as ramp.yaml so you can tune it.\n")
+        print(describe_verbose(raw) if getattr(args, "verbose", False)
+              else describe(raw))
         cfg = Config.from_dict(raw)
 
     # CLI flags win over whatever the config says. --host matters for
@@ -146,12 +151,12 @@ def _engage_transparent(args) -> transparent.TransparentState | None:
         print("Nothing was changed.", file=sys.stderr)
         return None
 
-    print(f"\n{_c('Transparent mode', '1')}\n")
-    print(p.describe())
     print()
-    if not _confirm("Put RAMP in front of Ollama?", args.yes):
-        print("Left everything as it was. Run without --transparent to use "
-              "RAMP's own port instead.")
+    print(p.describe())
+    if getattr(args, "verbose", False):
+        print(p.details())
+    if not _confirm("Continue?", args.yes):
+        print("Nothing changed.")
         return None
 
     try:
@@ -161,8 +166,8 @@ def _engage_transparent(args) -> transparent.TransparentState | None:
         print("Rolled back - Ollama is as you left it.", file=sys.stderr)
         return None
 
-    print(f"{_c('Done.', '32')} Ollama now on {p.relocate_port}; RAMP taking "
-          f"{p.target_port}.\n")
+    print(f"{_c('ok', '32')} {p.runtime.label} -> {p.relocate_port}, "
+          f"RAMP -> {p.target_port}")
     return state
 
 
@@ -245,9 +250,8 @@ def cmd_start(args) -> int:
     """Start the daemon in the background and hand the terminal back."""
     existing = daemon.running()
     if existing is not None and daemon.responding(existing.get("url", "")):
-        print(f"{_c('Already running', '33')} (pid {existing['pid']}) at "
-              f"{existing.get('url')}")
-        print("  ramp status   ramp watch   ramp stop")
+        print(f"{_c('Already running', '33')} on {existing.get('url')} "
+              f"(pid {existing['pid']})")
         return 0
 
     port = args.port or DEFAULT_PORT
@@ -270,21 +274,16 @@ def cmd_start(args) -> int:
         if not _confirm_transparent_upfront(args):
             return 1
 
-    print("Starting RAMP in the background...")
     try:
         pid, log = daemon.spawn(daemon.foreground_argv(passthrough), url)
     except RuntimeError as e:
         print(f"{_c('Failed to start:', '31')} {e}", file=sys.stderr)
         return 1
 
-    print(f"{_c('RAMP is running', '32')} (pid {pid}) on {_c(url + '/v1', '36')}")
-    print("  point any OpenAI-compatible client at that URL")
-    print()
-    print(f"  {_c('ramp status', '36')}   what is loaded and why")
-    print(f"  {_c('ramp watch', '36')}    live view")
-    print(f"  {_c('ramp stop', '36')}     stop it")
-    print()
-    print(f"  logs: {log}")
+    print(f"{_c('RAMP', '32')} on {_c(url + '/v1', '36')}  (pid {pid})")
+    print(f"  {_c('ramp status', '2')} | {_c('ramp watch', '2')} | {_c('ramp stop', '2')}")
+    if args.verbose:
+        print(f"  logs: {log}")
     return 0
 
 
@@ -303,12 +302,11 @@ def _confirm_transparent_upfront(args) -> bool:
         print(f"{_c('Transparent mode unavailable:', '31')} {e}", file=sys.stderr)
         return False
     print()
-    print(_c("Transparent mode", "1"))
-    print()
     print(p.describe())
-    print()
-    if not _confirm("Put RAMP in front of it?", args.yes):
-        print("Left everything as it was.")
+    if args.verbose:
+        print(p.details())
+    if not _confirm("Continue?", args.yes):
+        print("Nothing changed.")
         return False
     return True
 
@@ -381,10 +379,8 @@ def _serve(args) -> int:
     )
     app = create_app(controller, cfg)
     url = f"http://{cfg.listen_host}:{cfg.listen_port}"
-    print(f"{_c('RAMP', '1')} serving on {_c(url + '/v1', '36')} "
-          f"({len(cfg.tiers)} tiers, {cfg.backend} backend)")
-    print(f"     status: {url}/ramp/status     metrics: {url}/ramp/metrics")
-    print("     point any OpenAI-compatible client at the /v1 URL above.\n")
+    print(f"{_c('RAMP', '32')} on {_c(url + '/v1', '36')}  "
+          f"({len(cfg.tiers)} tiers, {cfg.backend})")
     # A Server object rather than uvicorn.run(), so /ramp/shutdown can ask
     # it to exit cleanly - which is what lets transparent mode unwind.
     server = uvicorn.Server(
@@ -493,6 +489,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command")
 
     def common(sp):
+        sp.add_argument("-v", "--verbose", action="store_true",
+                        help="show the full detail instead of a summary")
         sp.add_argument("--ollama-url", default="http://127.0.0.1:11434",
                         help="Ollama server to inspect (default: %(default)s)")
         sp.add_argument("--port", type=int, default=None,
