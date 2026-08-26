@@ -19,7 +19,7 @@ import urllib.request
 import uvicorn
 import yaml
 
-from . import __version__
+from . import __version__, takeover
 from .autoconfig import AutoConfigError, autodetect, describe
 from .backend import make_backend
 from .config import Config, ConfigError
@@ -106,11 +106,81 @@ def _resolve_config(args) -> Config:
     return cfg
 
 
+def _confirm(question: str, assume_yes: bool) -> bool:
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        print(
+            f"{_c('Refusing:', '31')} takeover needs confirmation, but this isn't "
+            "an interactive terminal. Pass --yes if you're sure.",
+            file=sys.stderr,
+        )
+        return False
+    try:
+        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
+def _do_takeover(args) -> takeover.TakeoverState | None:
+    """Ask, then take over Ollama's port. Returns None if declined/impossible."""
+    try:
+        p = takeover.plan(
+            target_port=args.takeover_port,
+            relocate_port=args.relocate_port,
+            ollama_bin=args.ollama_bin,
+        )
+    except takeover.TakeoverError as e:
+        print(f"{_c('Takeover not possible:', '31')} {e}", file=sys.stderr)
+        print("Nothing was changed.", file=sys.stderr)
+        return None
+
+    print(f"\n{_c('Transparent takeover', '1')}\n")
+    print(p.describe())
+    print()
+    if not _confirm("Take over the port?", args.yes):
+        print("Left everything as it was. Run without --takeover to use "
+              "RAMP's own port instead.")
+        return None
+
+    try:
+        state = takeover.execute(p)
+    except takeover.TakeoverError as e:
+        print(f"\n{_c('Takeover failed:', '31')} {e}", file=sys.stderr)
+        print("Rolled back - Ollama is as you left it.", file=sys.stderr)
+        return None
+
+    print(f"{_c('Done.', '32')} Ollama now on {p.relocate_port}; RAMP taking "
+          f"{p.target_port}.\n")
+    return state
+
+
 def cmd_run(args) -> int:
     logging.basicConfig(
         level=args.log_level.upper(),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
+
+    state = None
+    if getattr(args, "takeover", False):
+        state = _do_takeover(args)
+        if state is None:
+            return 1
+        # Serve on the port we just claimed, talking to the relocated Ollama.
+        args.port = state.plan.target_port
+        args.ollama_url = f"http://127.0.0.1:{state.plan.relocate_port}"
+
+    try:
+        return _serve(args)
+    finally:
+        if state is not None:
+            print("\nRestoring Ollama...")
+            for note in takeover.restore(state):
+                print(f"  {note}")
+
+
+def _serve(args) -> int:
     try:
         cfg = _resolve_config(args)
     except AutoConfigError as e:
@@ -240,6 +310,19 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--host", default=None,
                      help="address to bind (default: 127.0.0.1; use 0.0.0.0 in containers)")
     run.add_argument("--log-level", default="info")
+    run.add_argument(
+        "--takeover", action="store_true",
+        help="occupy Ollama's port and relocate Ollama behind RAMP, so every "
+             "existing tool routes through it with no client changes (asks first)",
+    )
+    run.add_argument("--takeover-port", type=int, default=11434,
+                     help="port to take over (default: %(default)s, Ollama's)")
+    run.add_argument("--relocate-port", type=int, default=11435,
+                     help="where Ollama is moved to (default: %(default)s)")
+    run.add_argument("--ollama-bin", default="ollama",
+                     help="path to the ollama binary, if not on PATH")
+    run.add_argument("--yes", "-y", action="store_true",
+                     help="skip the takeover confirmation prompt")
     run.set_defaults(func=cmd_run)
 
     doc = common(sub.add_parser("doctor", help="check this machine can run RAMP"))

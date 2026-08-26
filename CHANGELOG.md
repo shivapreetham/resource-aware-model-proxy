@@ -6,6 +6,36 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-26
+
+### Added
+
+- **Transparent takeover** (`ramp run --takeover`). RAMP can occupy Ollama's
+  port and relocate Ollama behind it, so every tool already pointed at
+  `localhost:11434` routes through RAMP with **no client configuration at
+  all** — including tools using Ollama's native `/api/*` routes, not just
+  OpenAI-shaped ones.
+
+  It is consent-based and reversible by construction:
+  - Never proceeds without an explicit prompt (`--yes` to skip, and it
+    refuses outright in a non-interactive shell without it).
+  - The replacement Ollama is started and proven healthy **before** the
+    original is stopped, so a failure at any step rolls back and leaves
+    Ollama exactly as it was.
+  - Refuses up front — changing nothing — if Ollama isn't on the target
+    port, the relocation port is busy, or the `ollama` binary can't be
+    found to restart it with.
+  - Restores Ollama to its original port automatically when RAMP exits.
+
+  Configurable via `--takeover-port`, `--relocate-port`, and `--ollama-bin`.
+
+### Known limitations
+
+- Takeover's success path has been exercised by unit tests but not yet on a
+  machine where Ollama runs as a managed service or tray app, which may
+  restart Ollama automatically and reclaim the port. Takeover detects this
+  and rolls back rather than leaving a broken state.
+
 ## [0.1.0] — 2026-08-26
 
 First public release.
@@ -47,5 +77,6 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.1.0
