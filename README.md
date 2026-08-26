@@ -156,6 +156,9 @@ ramp status    # what's loaded, why, and what it's costing
 <summary>Other commands</summary>
 
 ```bash
+ramp demo                  # try it with no models at all
+ramp ask "hello"           # send one message, see which tier answered
+ramp stress                # fill memory to watch the ladder react
 ramp init                  # write the auto-detected ladder to ramp.yaml to tune
 ramp run -c ramp.yaml      # start from an explicit config
 ramp run --transparent     # serve on Ollama's port so existing tools just work

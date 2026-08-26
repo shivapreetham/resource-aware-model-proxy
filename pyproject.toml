@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ramp-llm"
-version = "0.2.1"
+version = "0.3.0"
 description = "RAMP: Resource-Aware Model Proxy - an elastic local LLM daemon that auto-calibrates model size to available RAM, VRAM and disk"
 readme = "README.md"
 requires-python = ">=3.10"

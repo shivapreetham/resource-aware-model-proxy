@@ -16,6 +16,7 @@ import sys
 import urllib.error
 import urllib.request
 
+import psutil
 import uvicorn
 import yaml
 
@@ -24,6 +25,7 @@ from .autoconfig import AutoConfigError, autodetect, describe
 from .backend import make_backend
 from .config import Config, ConfigError
 from .controller import Controller
+from .demo import demo_config, stress
 from .doctor import run_checks, worst
 from .monitor import ResourceMonitor
 from .server import create_app
@@ -154,6 +156,72 @@ def _engage_transparent(args) -> transparent.TransparentState | None:
     print(f"{_c('Done.', '32')} Ollama now on {p.relocate_port}; RAMP taking "
           f"{p.target_port}.\n")
     return state
+
+
+def cmd_demo(args) -> int:
+    """Run a self-contained demo: mock backend, ladder sized to this machine."""
+    free = psutil.virtual_memory().available / (1024 * 1024)
+    raw = demo_config(free, port=args.port or DEFAULT_PORT)
+    cfg = Config.from_dict(raw)
+    tiers = "  ".join(f"{t.name}({t.est_ram_mb:.0f}MB)" for t in cfg.tiers)
+    print(f"{_c('RAMP demo', '1')} - no models needed, nothing downloaded.\n")
+    print(f"  this machine has {free:,.0f} MB free, so the ladder is:")
+    print(f"  {tiers}")
+    print(f"  RAMP drops a tier when free memory falls below "
+          f"{cfg.safety_margin_mb:,.0f} MB.\n")
+    print("  In a second terminal, try:")
+    print(f"    {_c('ramp ask hello', '36')}      <- see which model answers")
+    print(f"    {_c('ramp stress', '36')}         <- fill memory, then ask again")
+    print(f"    {_c('ramp status', '36')}         <- the full story\n")
+
+    controller = Controller(
+        cfg, make_backend(cfg), ResourceMonitor(cfg.ema_alpha, disk_path=cfg.disk_path)
+    )
+    app = create_app(controller, cfg)
+    uvicorn.run(app, host=cfg.listen_host, port=cfg.listen_port, log_level="warning")
+    return 0
+
+
+def cmd_ask(args) -> int:
+    """Send one message and show which tier answered. No curl, no JSON."""
+    url = args.url.rstrip("/")
+    text = " ".join(args.text) or "hello"
+    body = json.dumps({
+        "model": "auto",
+        "messages": [{"role": "user", "content": text}],
+        "max_tokens": args.max_tokens,
+    }).encode()
+    req = urllib.request.Request(
+        f"{url}/v1/chat/completions", data=body,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=args.timeout) as r:
+            tier = r.headers.get("x-ramp-tier", "?")
+            payload = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        print(f"{_c('RAMP replied with an error:', '31')} {e.code} "
+              f"{e.read().decode(errors='replace')[:200]}", file=sys.stderr)
+        return 1
+    except (urllib.error.URLError, OSError) as e:
+        print(f"{_c('No daemon at', '31')} {url} ({e})", file=sys.stderr)
+        print("Start one with 'ramp' (or 'ramp demo' to try it without models).",
+              file=sys.stderr)
+        return 1
+
+    content = payload["choices"][0]["message"]["content"]
+    print(content)
+    print(f"\n{_c('answered by:', '2')} {_c(tier, '32')}")
+    return 0
+
+
+def cmd_stress(args) -> int:
+    """Fill memory so you can watch the ladder react."""
+    try:
+        stress(leave_free_percent=args.leave_free, hold_s=args.hold)
+    except KeyboardInterrupt:
+        print("\nreleased early.")
+    return 0
 
 
 def cmd_restore(args) -> int:
@@ -354,6 +422,23 @@ def build_parser() -> argparse.ArgumentParser:
     ini.add_argument("--output", "-o", default="ramp.yaml")
     ini.add_argument("--force", action="store_true", help="overwrite an existing file")
     ini.set_defaults(func=cmd_init)
+
+    dem = common(sub.add_parser("demo", help="try it with no models, nothing downloaded"))
+    dem.set_defaults(func=cmd_demo)
+
+    ask = sub.add_parser("ask", help="send one message and see which tier answered")
+    ask.add_argument("text", nargs="*", help="what to say (default: hello)")
+    ask.add_argument("--url", default=f"http://127.0.0.1:{DEFAULT_PORT}")
+    ask.add_argument("--max-tokens", type=int, default=60)
+    ask.add_argument("--timeout", type=float, default=120.0)
+    ask.set_defaults(func=cmd_ask)
+
+    stz = sub.add_parser("stress", help="fill memory to watch RAMP react")
+    stz.add_argument("--leave-free", type=float, default=35.0,
+                     help="percent of current free memory to leave (default: %(default)s)")
+    stz.add_argument("--hold", type=float, default=45.0,
+                     help="seconds to hold before releasing (default: %(default)s)")
+    stz.set_defaults(func=cmd_stress)
 
     res = sub.add_parser(
         "restore",

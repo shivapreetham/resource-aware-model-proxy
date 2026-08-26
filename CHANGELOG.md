@@ -6,6 +6,28 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-26
+
+### Added
+
+- **`ramp demo`** - the whole thing running with no models and no config
+  file. The three-tier ladder is derived from the machine's *currently free*
+  memory, so it behaves identically on a 2 GB netbook and a 64 GB
+  workstation instead of only on the author's laptop.
+- **`ramp ask "..."`** - send one message and see which tier answered.
+  Replaces a `curl` invocation whose JSON quoting was written for Windows
+  and silently broke on macOS and Linux.
+- **`ramp stress`** - fill memory to watch the ladder react. Targets a
+  percentage of *current* free memory rather than a fixed size, and
+  re-touches its pages while holding, because otherwise Windows moves them
+  to standby, "available" climbs back, and no pressure is ever observed.
+
+### Changed
+
+- `DEMO.md` rewritten around these commands: no curl, no config file to
+  paste, per-platform `python3` / `py` instructions, and a second walkthrough
+  that downloads real models via Ollama.
+
 ## [0.2.1] — 2026-08-26
 
 ### Changed
@@ -95,7 +117,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.3.0
 [0.2.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.1
 [0.2.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.1.0
