@@ -22,6 +22,8 @@ import yaml
 
 from . import __version__, daemon, transparent
 from .autoconfig import (
+    DEFAULT_PROFILE,
+    PROFILES,
     AutoConfigError,
     autodetect,
     describe,
@@ -90,6 +92,13 @@ def cmd_doctor(args) -> int:
     return 0
 
 
+def _profile_from(args) -> str:
+    """--aggressive is shorthand for --profile aggressive."""
+    if getattr(args, "aggressive", False):
+        return "aggressive"
+    return getattr(args, "profile", None) or DEFAULT_PROFILE
+
+
 def _resolve_config(args) -> Config:
     """Explicit config if given, else a config file in cwd, else autodetect."""
     path = args.config or _find_default_config()
@@ -98,7 +107,9 @@ def _resolve_config(args) -> Config:
         cfg = Config.load(path)
     else:
         raw = autodetect(
-            ollama_url=args.ollama_url, port=args.port or DEFAULT_PORT
+            ollama_url=args.ollama_url,
+            port=args.port or DEFAULT_PORT,
+            profile=_profile_from(args),
         )
         print(describe_verbose(raw) if getattr(args, "verbose", False)
               else describe(raw))
@@ -398,7 +409,8 @@ def _serve(args) -> int:
 
 def cmd_init(args) -> int:
     try:
-        raw = autodetect(ollama_url=args.ollama_url, port=args.port or DEFAULT_PORT)
+        raw = autodetect(ollama_url=args.ollama_url, port=args.port or DEFAULT_PORT,
+                         profile=_profile_from(args))
     except AutoConfigError as e:
         print(f"{_c('Could not auto-detect:', '31')} {e}", file=sys.stderr)
         return 1
@@ -491,6 +503,11 @@ def build_parser() -> argparse.ArgumentParser:
     def common(sp):
         sp.add_argument("-v", "--verbose", action="store_true",
                         help="show the full detail instead of a summary")
+        sp.add_argument("--profile", choices=sorted(PROFILES),
+                        help=f"how much RAM to leave free (default: {DEFAULT_PROFILE})")
+        sp.add_argument("--aggressive", action="store_true",
+                        help="use the whole machine: leave only ~500 MB free, "
+                             "and climb back to the bigger model quickly")
         sp.add_argument("--ollama-url", default="http://127.0.0.1:11434",
                         help="Ollama server to inspect (default: %(default)s)")
         sp.add_argument("--port", type=int, default=None,

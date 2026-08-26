@@ -56,6 +56,14 @@ than by watching a terminal.
 
 Add `-v` to any of them for more detail; every command has `--help`.
 
+**How greedy should it be?** By default RAMP keeps a slice of RAM free for the
+rest of your machine. To use more of it:
+
+```bash
+ramp --aggressive     # leave only ~500 MB free, climb back in ~20s
+ramp --profile safe   # the opposite: keep plenty free, move slowly
+```
+
 ## Point your tools at it
 
 Change one line:

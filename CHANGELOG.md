@@ -6,6 +6,35 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-27
+
+### Fixed
+
+- **Large models were unreachable.** A GPU-resident model had its weights
+  charged against system RAM *as well as* VRAM. On a 16 GB machine a 5 GB
+  model was billed ~6.7 GB of RAM it never used, so with the old margin the
+  top tier needed 8.8 GB free and could never load - RAMP silently refused
+  to use the best model you had. Weights are now charged where they
+  actually live.
+
+- **Big GPUs were ignored when choosing the ladder.** Viability was judged on
+  system RAM alone, so a 20 GB model was rejected on a machine with a 24 GB
+  card. A model is now viable if it fits *either* RAM or VRAM.
+
+### Added
+
+- **Profiles** (`--profile safe|balanced|aggressive`, or `--aggressive`).
+  They set how much RAM RAMP refuses to consume and how quickly it climbs
+  back. `aggressive` leaves ~500 MB and returns to the bigger model in about
+  20 seconds; `safe` is cautious about both.
+
+### Changed
+
+- The default margin is smaller (8% of RAM, 768-2048 MB rather than a flat
+  15%), and the default upgrade wait is 90s with a 45s cooldown instead of
+  120s and 60s. The old defaults were cautious enough to make the top of a
+  ladder unreachable, which is the one failure worse than swapping too often.
+
 ## [0.6.3] - 2026-08-27
 
 ### Changed
@@ -276,7 +305,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.7.0
 [0.6.3]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.3
 [0.6.2]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.2
 [0.6.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.1
