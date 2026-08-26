@@ -6,6 +6,17 @@ All notable changes to RAMP are documented here. This project follows
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-08-27
+
+### Changed
+
+- **README rewritten to be usable.** It opened with about 130 lines of
+  architecture and policy theory before telling anyone how to install it, and
+  duplicated material that `docs/CONCEPTS.md` already covered better. Now:
+  install, a **command reference table**, how to point tools at it, then the
+  deeper material - with the theory linked rather than inlined. 378 lines
+  down to 232.
+
 ## [0.6.2] - 2026-08-27
 
 ### Changed
@@ -265,7 +276,8 @@ First public release.
   devices are not yet supported.
 - Swaps happen between requests, never mid-generation.
 
-[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/shivapreetham/resource-aware-model-proxy/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.3
 [0.6.2]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.2
 [0.6.1]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.1
 [0.6.0]: https://github.com/shivapreetham/resource-aware-model-proxy/releases/tag/v0.6.0
