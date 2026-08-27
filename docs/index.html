@@ -3,18 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Elastic Local LLMs — RAMP</title>
-<meta name="description" content="Why local LLMs share a computer badly: the KV-cache arithmetic behind VRAM pressure becoming RAM pressure, and a daemon that resizes the model instead of freezing the machine.">
+<title>Elastic Local LLMs &mdash; RAMP</title>
+<meta name="description" content="An OOM killed my laptop while I was building a local-LLM assistant. Chasing the numbers led to the KV-cache arithmetic behind VRAM pressure becoming RAM pressure - and a daemon that resizes the model instead of freezing the machine.">
 <meta name="author" content="Shivapreetham">
 <link rel="canonical" href="https://shivapreetham.github.io/resource-aware-model-proxy/">
 <meta property="og:type" content="article">
-<meta property="og:title" content="I gave my model more context and my GPU got emptier">
-<meta property="og:description" content="An OOM killed my laptop while building a local-LLM assistant. Chasing the numbers led to a daemon that resizes the model instead of freezing the machine.">
+<meta property="og:title" content="Your local LLM shouldn't freeze your laptop">
+<meta property="og:description" content="An OOM killed my laptop while I was building a local-LLM assistant. Chasing the numbers led to the KV-cache arithmetic behind VRAM pressure becoming RAM pressure - and a daemon that resizes the model instead of freezing the machine.">
 <meta property="og:url" content="https://shivapreetham.github.io/resource-aware-model-proxy/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="I gave my model more context and my GPU got emptier">
-<meta name="twitter:description" content="An OOM killed my laptop while building a local-LLM assistant. Chasing the numbers led to a daemon that resizes the model instead of freezing the machine.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#127898;</text></svg>">
+<meta name="twitter:title" content="Your local LLM shouldn't freeze your laptop">
+<meta name="twitter:description" content="An OOM killed my laptop while I was building a local-LLM assistant. Chasing the numbers led to the KV-cache arithmetic behind VRAM pressure becoming RAM pressure - and a daemon that resizes the model instead of freezing the machine.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2218%22 fill=%22%2314120F%22/><g fill=%22%23E8E3DD%22><rect x=%2220%22 y=%2226%22 width=%2260%22 height=%226%22 rx=%223%22/><rect x=%2220%22 y=%2247%22 width=%2260%22 height=%226%22 rx=%223%22/><rect x=%2220%22 y=%2268%22 width=%2260%22 height=%226%22 rx=%223%22/></g><g fill=%22%23E8737A%22><circle cx=%2268%22 cy=%2229%22 r=%229%22/><circle cx=%2244%22 cy=%2250%22 r=%229%22/><circle cx=%2256%22 cy=%2271%22 r=%229%22/></g></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
@@ -266,118 +266,95 @@ body { margin: 0; }
     font-size: 12px;
     color: var(--ink-soft);
   }
-
 </style>
 </head>
 <body>
-<div class="wrap">
 
-<header class="top">
-  <p class="kicker">Local LLMs · Memory</p>
-  <h1>I gave my model more context and my GPU got <em>emptier</em></h1>
-  <p class="standfirst">
-    I set out to build an assistant, killed my laptop instead, and ended up
-    writing a daemon that resizes the model rather than freezing the machine.
-  </p>
-  <p class="byline">Measured on 16 GB RAM · RTX 5060 Laptop 8 GB · Qwen2.5 and Llama 3.1</p>
-</header>
+<article class="wrap">
 
-<p>
-  I was not trying to build a memory manager. I was building an assistant on
-  top of a local model, and one afternoon the machine simply stopped. Out of
-  memory. The cursor stopped moving, Ollama died, and I lost the session I had
-  been working in. Nothing crashed gracefully; the whole desktop just went
-  under and stayed there for a minute.
-</p>
+<p class="kicker">Local LLMs &middot; Systems</p>
+<h1>Your local LLM shouldn&rsquo;t freeze your laptop</h1>
+<p class="standfirst">I set out to build an assistant, killed my laptop instead, and ended up
+writing a daemon that shrinks the model rather than freezing the machine.</p>
+<p class="byline">Every number below measured on 16&nbsp;GB RAM &middot; RTX 5060 Laptop 8&nbsp;GB &middot; Qwen2.5 and Llama&nbsp;3.1</p>
 
-<p>
-  <strong>If you run models locally, you have had some version of this
-  afternoon.</strong> The fix everyone reaches for is to pick a smaller model
-  and stop thinking about it — which works, and costs you a worse assistant
-  every hour of every day to prevent something that happens occasionally. The
-  alternative is to keep the big model and accept that your machine is
-  periodically unusable.
-</p>
+<h2>The afternoon it froze</h2>
 
-<p>
-  Both options seemed wrong for the same reason: they are one-time decisions
-  about a constraint that changes minute to minute. So before writing anything,
-  I went looking for where the cliff actually sits. The first measurement
-  contradicted my mental model entirely.
-</p>
+<p>I was building something else entirely &mdash; a local assistant that remembered
+things between conversations. It was going well. A 7B model was loaded and
+answering, I had a browser open on one side and an editor on the other, and for
+about an hour it felt like the future.</p>
 
-<h2>The measurement that made no sense</h2>
+<p>Then I opened one more tab.</p>
 
-<p>
-  I loaded Llama 3.1 8B on an 8 GB card three times, changing only the context
-  length, and watched free VRAM after each load.
-</p>
+<p>The cursor stuttered. Then it stopped. The machine went somewhere I couldn&rsquo;t
+follow it for a full minute &mdash; no window switching, no task manager, nothing
+&mdash; and when it came back, Ollama had been killed and the editor had gone with
+it. An afternoon of work, ended by a browser tab.</p>
 
-<div class="scroll">
-  <table>
-    <caption>Measured — free VRAM after loading Llama 3.1 8B</caption>
-    <thead><tr><th>Context</th><th class="num">Free VRAM</th></tr></thead>
-    <tbody>
-      <tr><td>default</td><td class="num">2,516 MiB</td></tr>
-      <tr><td>32,768</td><td class="num">1,018 MiB</td></tr>
-      <tr class="hi"><td>40,960</td><td class="num">1,702 MiB</td></tr>
-    </tbody>
-  </table>
-</div>
-
-<p>
-  Look at the last row. I asked for <em>more</em> context — more KV cache, more
-  memory — and got <strong>684 MiB of VRAM back</strong>. That is not how
-  memory works.
-</p>
-
-<p>
-  The explanation is in the other number I wasn't watching. System RAM had
-  dropped to 1,509 MB. The KV cache at 40k tokens no longer fit on the card, so
-  the runtime quietly moved layers onto the CPU. Doing that <em>freed</em> VRAM
-  and consumed RAM instead.
-</p>
+<p>I sat there long enough to get properly annoyed, and somewhere in that
+annoyance the actual problem arrived, which was not the one I thought I had:</p>
 
 <blockquote>
-  <p>VRAM pressure had silently become RAM pressure. Nothing announced it.</p>
+<p>I didn&rsquo;t lose that work because the model was too big.
+I lost it because the model had <em>no way to become smaller</em>.</p>
 </blockquote>
 
-<h3>The arithmetic behind it</h3>
+<p>It had exactly one size. It held that size while the machine died around it.</p>
 
-<p>
-  This is entirely predictable once you count the KV cache, which most capacity
-  planning ignores. Every generated token stores a key and a value vector in
-  every layer, and that store grows linearly with context length:
-</p>
+<h2>If you run models locally, you have already made this trade</h2>
 
-<div class="math">
-<span class="eq">kv_bytes_per_token = 2 · <var>n_layers</var> · <var>n_kv_heads</var> · <var>head_dim</var> · <var>bytes_per_element</var></span>
-<span class="where">2                  both a key and a value are cached
-n_layers           transformer blocks, each caching independently
-n_kv_heads         attention heads sharing a KV projection (GQA)
-head_dim           width of one head
-bytes_per_element  2 for fp16</span>
-</div>
+<p>You know the ritual. You pick the largest model your machine can hold, you
+learn which other applications you&rsquo;re not allowed to open while it runs, and
+sooner or later something goes wrong anyway. So you drop to a smaller model
+permanently &mdash; and now you spend <em>every</em> hour with worse answers, in
+order to prevent something that happens once a fortnight.</p>
 
-<p>
-  For Llama 3.1 8B — 32 layers, 8 KV heads, head dimension 128, fp16 — that is
-  <strong>128 KiB per token</strong>. So the full 40,960-token window costs:
-</p>
+<p>Both options are bad, and every local tool I could find offered only those
+two, because they all make the decision at the same moment: <strong>once, at load
+time, forever.</strong> Ollama and LM&nbsp;Studio pick a quantization when the model
+loads. llama-swap will swap models, but on the <em>client&rsquo;s</em> request &mdash;
+never because the machine is in trouble. Nothing was watching the one thing that
+actually changes.</p>
 
-<div class="math">
-<span class="eq">2 · 32 · 8 · 128 · 2      = 131,072 bytes   <span class="cmt">≈ 128 KiB / token</span>
-128 KiB · 40,960 tokens  = 5.0 GiB       <span class="cmt">KV cache alone</span>
-5.0 GiB + 4.9 GiB        = 9.9 GiB       <span class="cmt">+ Q4 weights</span>
-                          &gt; 8.0 GiB       <span class="cmt">card capacity</span></span>
-</div>
+<p>So I stopped building the assistant and started measuring what was going
+wrong. That is where it got strange.</p>
 
-<p>
-  The cache alone exceeds the weights. Nothing was mysterious about that
-  measurement: the request simply did not fit, and the runtime resolved the
-  overflow the only way it could — by moving layers into system RAM. The
-  surprise was only that it happened silently, and that the resource which
-  <em>looked</em> healthier afterwards was the one under pressure.
-</p>
+<h2>Then a measurement made no sense</h2>
+
+<p>I loaded Llama&nbsp;3.1&nbsp;8B on an 8&nbsp;GB card three times, changing only
+the context length, and recorded free VRAM after each load.</p>
+
+<table>
+<caption>Measured &mdash; free VRAM after loading Llama 3.1 8B</caption>
+<thead><tr><th>Context</th><th>Free VRAM</th></tr></thead>
+<tbody>
+<tr><td>default</td><td>2,516 MiB</td></tr>
+<tr><td>32,768</td><td>1,018 MiB</td></tr>
+<tr><td><strong>40,960</strong></td><td><strong>1,702 MiB</strong></td></tr>
+</tbody>
+</table>
+
+<p>Look at the last row. I asked for <em>more</em> context &mdash; more KV cache,
+more memory &mdash; and the card handed me back 684&nbsp;MiB.</p>
+
+<p>That is not how memory works. I re-ran it three times assuming I had made a
+mistake.</p>
+
+<p>The answer was in the number I wasn&rsquo;t watching. System RAM had fallen to
+1,509&nbsp;MB. The KV cache at 40k tokens no longer fit on the card, so the
+runtime had quietly moved layers onto the CPU &mdash; which frees VRAM and eats
+RAM instead. My GPU looked healthier precisely <em>because</em> my machine was in
+more danger.</p>
+
+<blockquote>
+<p><strong>The shortage doesn&rsquo;t stay put. It moves house, and nothing
+announces it.</strong></p>
+</blockquote>
+
+<p>Watching VRAM alone would have told me things were improving, right up until
+the freeze. That single measurement is why RAMP watches RAM, VRAM and disk
+together rather than picking one.</p>
 
 <figure>
   <svg viewBox="0 0 660 250" role="img" aria-label="At a small context the model and its KV cache fit in VRAM. At a large context the KV cache no longer fits, so the runtime moves layers to system RAM: VRAM usage falls while RAM usage rises.">
@@ -420,30 +397,87 @@ bytes_per_element  2 for fp16</span>
   </figcaption>
 </figure>
 
-<p>
-  This is the thing that makes local LLMs so annoying to live with. The
-  shortage doesn't stay put. Any tool watching only one resource will draw the
-  wrong conclusion, and any human tuning by feel is chasing a number that moves
-  when they touch it.
-</p>
+<h3>The arithmetic behind it</h3>
 
-<h2>Choosing continuously instead of once</h2>
+<p>None of this is mysterious once you count the KV cache, which most capacity
+planning quietly ignores. Every generated token stores a key and a value vector
+in every layer, and that store grows linearly with context length:</p>
 
-<p>
-  If the constraint changes minute to minute, the model size should too. I
-  built <strong>RAMP</strong> — a small daemon that sits in front of Ollama or
-  llama.cpp, watches RAM, VRAM and disk every few seconds, and moves the loaded
-  model up and down a ladder.
-</p>
+<div class="math">
+<span class="eq">kv_bytes_per_token = 2 &middot; n_layers &middot; n_kv_heads &middot; head_dim &middot; bytes_per_element</span>
+</div>
 
-<p>
-  Open Chrome with forty tabs and your 7B quietly becomes a 3B. Close them and
-  the 7B comes back. Your tools never know: it speaks the OpenAI API, so the
-  integration is one line.
-</p>
+<ul>
+<li><strong>2</strong> &mdash; both a key and a value are cached</li>
+<li><strong>n_layers</strong> &mdash; transformer blocks, each caching independently</li>
+<li><strong>n_kv_heads</strong> &mdash; attention heads sharing a KV projection (GQA)</li>
+<li><strong>head_dim</strong> &mdash; width of one head</li>
+<li><strong>bytes_per_element</strong> &mdash; 2 for fp16</li>
+</ul>
 
-<pre><code>- client = OpenAI(base_url="http://localhost:11434/v1")   # to Ollama
-+ client = OpenAI(base_url="http://localhost:8090/v1")    # through RAMP</code></pre>
+<p>For Llama&nbsp;3.1&nbsp;8B &mdash; 32 layers, 8 KV heads, head dimension 128,
+fp16:</p>
+
+<div class="math">
+<span class="eq">2 &middot; 32 &middot; 8 &middot; 128 &middot; 2 = 131,072 bytes &asymp; 128 KiB / token</span>
+<span class="eq">128 KiB &middot; 40,960 tokens = 5.0 GiB   &larr; KV cache alone</span>
+<span class="eq">5.0 GiB + 4.9 GiB Q4 weights = 9.9 GiB &gt; 8.0 GiB card</span>
+</div>
+
+<p>The cache alone outweighs the model. The request simply did not fit, and the
+runtime resolved the overflow the only way it could. The surprise was never the
+spill &mdash; it was that the spill was <em>silent</em>, and that the resource I
+was monitoring moved in the reassuring direction while it happened.</p>
+
+<h2>So the model has to be able to move</h2>
+
+<p>If the shortage can migrate between resources, then a fixed model is the
+wrong shape of solution. What you want is a model that gets out of the way when
+the machine needs the memory, and comes back when it doesn&rsquo;t.</p>
+
+<p>RAMP arranges the models you already have into a ladder &mdash; largest and
+best at the top, smallest and fastest at the bottom &mdash; and moves between
+rungs based on what the machine is actually doing. It speaks the OpenAI API, so
+whatever you already point at Ollama can point at RAMP instead, and never find
+out that the model underneath it changed.</p>
+
+<h3>The decision rule</h3>
+
+<p>Two details do most of the work. The first is that a tier is only admissible
+if it fits in <em>both</em> resources at once &mdash; the lesson from the table
+above, written down as a rule:</p>
+
+<div class="math">
+<span class="eq">fits(t)  &hArr;  ram(t) + M &le; R   and   vram(t) + Mv &le; V</span>
+</div>
+
+<p>The second is subtler, and I got it wrong at first. The budget for a swap is
+not the memory free right now &mdash; it is the memory free right now
+<em>plus whatever the current model gives back when it unloads</em>:</p>
+
+<div class="math">
+<span class="eq">R&prime; = R + ram(current)</span>
+</div>
+
+<p>Compare against currently-free memory alone and upgrades become arithmetically
+impossible: the machine never has room for a bigger model <em>while still
+holding the smaller one</em>. The daemon would ratchet downward and never
+recover.</p>
+
+<p>Then, because the controller&rsquo;s own actions move the signal it reads, it
+needs damping &mdash; separate thresholds for dropping and climbing, an averaged
+signal rather than an instantaneous one, and a rate limit on upgrades:</p>
+
+<div class="math">
+<span class="eq">drop    when  ram_free &lt; T_down        &mdash; fast, ~6 s</span>
+<span class="eq">climb   when  ram_free &gt; T_up          &mdash; slow, ~90 s sustained</span>
+<span class="eq">where   T_up &gt; T_down                  &mdash; the dead band</span>
+</div>
+
+<p>The asymmetry is deliberate and it is the whole safety argument: a late
+downgrade freezes your machine, while a late upgrade costs you nothing but a
+slightly worse answer for another minute. When in doubt, be slow to take memory
+and quick to give it back.</p>
 
 <figure>
   <svg viewBox="0 0 660 260" role="img" aria-label="A trace of free memory over time with two separated thresholds. Memory falls below the lower line and the model steps down two tiers; when memory recovers past the upper line and stays there, it climbs back.">
@@ -477,196 +511,140 @@ bytes_per_element  2 for fp16</span>
   </figcaption>
 </figure>
 
-<p>
-  The asymmetry is the whole design. Dropping late means your machine freezes;
-  climbing back late costs a slightly worse answer for another minute. So it
-  drops in about six seconds and takes over a minute to come back.
-</p>
-
-<h3>The decision rule</h3>
-
-<p>
-  A tier is admissible when its footprint plus a reserve fits every budget it
-  touches. Both resources must clear independently — a tier that fits RAM but
-  not VRAM is not a candidate:
-</p>
-
-<div class="math">
-<span class="eq">fits(<var>t</var>) ⟺ ram(<var>t</var>) + <var>M</var> ≤ <var>R</var>     and     vram(<var>t</var>) + <var>M</var><sub>v</sub> ≤ <var>V</var></span>
-<span class="where">M, Mv   reserve kept free for the rest of the machine
-R, V    free RAM and free VRAM</span>
-</div>
-
-<p>
-  The subtlety is which <var>R</var> to use. Comparing against currently-free
-  memory makes upgrades impossible, because the memory an upgrade needs is
-  occupied by the model it replaces. The budget is therefore counted
-  <em>post-swap</em>:
-</p>
-
-<div class="math">
-<span class="eq"><var>R</var>′ = <var>R</var> + ram(<var>current</var>)      <span class="cmt">what is free once the current tier unloads</span></span>
-</div>
-
-<p>
-  And because the controller's own actions move the signal it reads, a single
-  threshold oscillates: unloading frees memory, which justifies reloading,
-  which consumes it again. Two separated thresholds and a time requirement
-  break that loop:
-</p>
-
-<div class="math">
-<span class="eq">down  ⟸  <var>R</var> &lt; <var>M</var>                       for <var>k</var> consecutive samples
-up    ⟸  ram(<var>t</var>) + <var>M</var> + <var>E</var> ≤ <var>R</var>′<sub>ema</sub>       sustained for <var>T</var> seconds</span>
-<span class="where">E   extra headroom, so a promoted tier does not immediately
-    consume the margin that justified promoting it
-k   2 samples (~6s)      T   90s      E   ~1 GB
-R'ema   smoothed, so a momentary dip cannot cancel a recovery</span>
-</div>
-
-<p>
-  Downgrades read the raw signal and upgrades read a smoothed one. That is
-  deliberate: reacting late to pressure is expensive, reacting late to
-  recovery is not.
-</p>
-
 <h2>What it costs</h2>
 
-<div class="scroll">
-  <table>
-    <caption>Measured</caption>
-    <thead><tr><th>Thing</th><th class="num">Cost</th></tr></thead>
-    <tbody>
-      <tr><td>A swap, warm</td><td class="num">1.9 s</td></tr>
-      <tr><td>A swap, cold (first load)</td><td class="num">16.5 s</td></tr>
-      <tr><td>RAMP's own memory</td><td class="num">65 MB</td></tr>
-      <tr><td>RAMP's own CPU, per hour idle</td><td class="num">~1 s</td></tr>
-    </tbody>
-  </table>
-</div>
+<table>
+<caption>Measured</caption>
+<thead><tr><th>Thing</th><th>Cost</th></tr></thead>
+<tbody>
+<tr><td>A swap, warm</td><td>1.9 s</td></tr>
+<tr><td>A swap, cold (first load)</td><td>16.5 s</td></tr>
+<tr><td>RAMP&rsquo;s own memory</td><td>65 MB</td></tr>
+<tr><td>RAMP&rsquo;s own CPU, per hour idle</td><td>~1 s</td></tr>
+</tbody>
+</table>
 
-<p>
-  Two seconds is the number that makes the approach viable at all; swapping was
-  assumed to be too expensive to do casually. It is not, because the operating
-  system keeps recently-read weights in its page cache. A useful consequence
-  follows: when pressure is severe enough to evict that cache, it is the
-  <em>upgrade</em> that becomes slow, never the downgrade. Cost asymmetry
-  aligns with urgency asymmetry.
-</p>
+<p>Two seconds is the number that makes the whole approach viable, and I did not
+expect it. I had assumed swapping was far too expensive to do casually &mdash;
+that assumption is probably what stops anyone building this. It is wrong because
+the operating system keeps recently-read weights in its page cache, so the second
+load of a model is nothing like the first.</p>
 
-<p>
-  And since "the memory watchdog is the leak" is the obvious retort, RAMP
-  reports its own footprint. You can check rather than trust me.
-</p>
+<p>A pleasing consequence falls out of that: when memory pressure is severe
+enough to evict the page cache, it is the <em>upgrade</em> that becomes slow,
+never the downgrade. The cost asymmetry lines up with the urgency asymmetry. The
+expensive direction is the one you are never in a hurry to take.</p>
 
-<h2>What testing did not catch</h2>
+<p>And since &ldquo;the memory watchdog is the leak&rdquo; is the obvious retort,
+RAMP reports its own footprint through <code>ramp status</code>. You can check
+that 65&nbsp;MB rather than take my word for it.</p>
 
-<p>
-  The suite stands at 166 tests. None of the three defects below was caught by
-  it — each surfaced only under a running system, and each is a category worth
-  naming.
-</p>
+<h2>Then it started fighting me</h2>
 
-<h3>A controller that misread its own transient state</h3>
+<p>The suite stands at 166 tests. It caught none of the three defects below.
+Every one surfaced only under a running system, and each is a category worth
+naming &mdash; the last one especially, because it is the funniest and the most
+embarrassing.</p>
 
-<p>
-  A pinned tier reverted itself two seconds after being set. Mid-swap, the old
-  backend is stopped before the current-tier variable is updated, so for a
-  window the daemon appears crashed <em>to itself</em>. Crash recovery fired
-  and restored the tier the swap was replacing. The fix is to treat a
-  transition in progress as a state no decision may be made about; the general
-  lesson is that any system observing itself must distinguish "broken" from
-  "mid-change."
-</p>
+<h3>1. It undid my own commands</h3>
 
-<p>
-  Worth recording: the first regression test for it passed against the broken
-  code, because it did not wait long enough for the spurious recovery to land.
-  A regression test not yet watched to fail is not evidence of anything.
-</p>
+<p>I pinned a tier by hand. Two seconds later it reverted itself.</p>
 
-<h3>Cleanup that only ran on the happy path</h3>
+<p>Mid-swap, the old backend is stopped before the current-tier variable is
+updated, so for a brief window <em>the daemon appears crashed to itself</em>.
+Crash recovery fired, helpfully restored the tier the swap was busy replacing,
+and clobbered the thing I had just asked for. The fix is to treat a transition
+in progress as a state about which no decision may be made; the general lesson
+is that any system observing itself has to be able to tell &ldquo;broken&rdquo;
+from &ldquo;mid-change.&rdquo;</p>
 
-<p>
-  RAMP can occupy the port a model server already uses and relocate that server
-  one port over, so every client routes through it unmodified. Restoration ran
-  on clean exit — and only on clean exit. Killing the daemon rather than
-  stopping it skipped the handler entirely and left nothing on port 11434. The
-  arrangement is now journalled to disk when engaged, so it survives a hard
-  kill and can be repaired on the next run.
-</p>
+<p>Worth recording: my first regression test for this passed against the broken
+code, because it didn&rsquo;t wait long enough for the spurious recovery to land.
+<strong>A regression test you have not watched fail is not evidence of
+anything.</strong></p>
 
-<h3>An estimate conservative enough to be wrong</h3>
+<h3>2. It cleaned up only when politely asked</h3>
 
-<p>
-  The most instructive of the three, because it produced no error at all. A
-  GPU-resident model was charged its weights against system RAM <em>and</em>
-  VRAM — double-counting a quantity that exists once. A 5 GB model was billed
-  6.7 GB of RAM it never touched, so the top of the ladder required 8.8 GB free
-  on a 16 GB machine and was unreachable in practice. The daemon declined to
-  use the best model installed and reported itself healthy throughout.
-  Over-conservative estimates are not the safe direction; they are simply a
-  different way to be wrong.
-</p>
+<p>RAMP can take the port your model server already uses and move that server
+one port over, so every client you own routes through it with no
+reconfiguration. Restoration ran on clean exit &mdash; and <em>only</em> on clean
+exit. I killed the daemon rather than stopping it, which skipped the handler
+entirely, and found port 11434 answering to nothing at all. I had broken Ollama
+for every other tool on the machine.</p>
+
+<p>The arrangement is now journalled to disk the moment it is engaged, so it
+survives a hard kill and can be repaired on the next run.</p>
+
+<h3>3. It refused to use my best model</h3>
+
+<p>This is the instructive one, because it produced no error, no crash and no
+failing test. It just quietly did the opposite of its entire purpose.</p>
+
+<p>A GPU-resident model was charged for its weights <em>twice</em> &mdash; once
+against VRAM and again against system RAM &mdash; double-counting memory that
+exists in exactly one place. A 5&nbsp;GB model was billed 6.7&nbsp;GB of RAM it
+never touched. The top of the ladder therefore demanded 8.8&nbsp;GB free on a
+16&nbsp;GB machine and was, in practice, unreachable.</p>
+
+<p>So the daemon I had written to stop my machine&rsquo;s capacity going to waste
+sat there declining to use the best model I owned, and reported itself perfectly
+healthy the whole time. I only caught it because I went looking for why the good
+model never seemed to load.</p>
 
 <blockquote>
-  <p>
-    A green suite on one machine proved to be the weakest signal available.
-    Continuous integration caught a defect already declared absent.
-  </p>
+<p>Over-conservative estimates are not the safe direction.
+They are just a different way of being wrong &mdash; and a quieter one.</p>
 </blockquote>
 
-<h2>Scope and coverage</h2>
+<p>Three defects, three categories, zero caught by a green test suite on my own
+machine. Continuous integration later caught a fourth that I had already
+declared absent.</p>
 
-<p>
-  RAMP is verified end to end against Ollama: detection, relocation, the full
-  pressure cycle, crash recovery, and restoration. The llama.cpp and LM Studio
-  paths run through the same policy and lifecycle code and are covered by unit
-  tests including every refusal branch, but have not had an integration run
-  against those binaries. The design anticipates that gap rather than papering
-  over it — where RAMP cannot positively identify a runtime, or cannot
-  reconstruct the command needed to restart it, it declines and changes
-  nothing. Stopping a server you cannot restart is the one outcome worth
-  engineering against absolutely.
-</p>
+<h2>What&rsquo;s proven, and what isn&rsquo;t</h2>
 
-<p>
-  The open measurement is swap <em>frequency</em> over a multi-hour workload.
-  Per-swap cost is characterised (1.9 s warm, 16.5 s cold); the rate at which
-  swaps occur is a function of the machine and the work being done on it, so
-  quoting a figure from one laptop would be worth less than instrumenting it.
-  <code>ramp status</code> reports swaps per hour, cumulative time spent
-  swapping, and per-tier occupancy directly — the claim is checkable rather
-  than asserted.
-</p>
+<p>RAMP is verified end to end against Ollama: detection, relocation, the full
+pressure cycle, crash recovery and restoration. The llama.cpp and LM&nbsp;Studio
+paths run through the same policy and lifecycle code and are covered by unit
+tests including every refusal branch, but have not had an integration run
+against those binaries. The design anticipates that gap rather than papering
+over it &mdash; where RAMP cannot positively identify a runtime, or cannot
+reconstruct the command needed to restart it, it declines and changes nothing.
+Stopping a server you cannot start again is the one outcome worth engineering
+against absolutely.</p>
 
-<p>
-  Reports from other hardware are the most useful contribution right now,
-  particularly from anyone running llama.cpp or LM Studio.
-</p>
+<p>The open measurement is swap frequency over a multi-hour workload. Per-swap
+cost is characterised; the <em>rate</em> is a function of your machine and your
+work, so a figure from one laptop would be worth less than the instrumentation.
+<code>ramp status</code> reports swaps per hour, cumulative time spent swapping
+and per-tier occupancy, which makes the claim checkable instead of asserted.
+Reports from other hardware are the most useful thing anyone can send me right
+now &mdash; particularly from llama.cpp and LM&nbsp;Studio users.</p>
 
 <h2>Running it</h2>
 
 <div class="cta">
-<pre><code>pip install ramp-llm
-ramp demo      # no models downloaded - watch it switch
-ramp watch     # in a second terminal
-ramp stress    # in a third: fill memory, watch it drop</code></pre>
-<p>
-  The demo runs against stand-in servers that announce which size answered, so
-  the behaviour is visible in plain text with nothing to download. With Ollama
-  installed, plain <code>ramp</code> finds your models and builds the ladder
-  itself. If you have ever lost an afternoon to an OOM on your own machine,
-  this was written for you.
-</p>
+<div class="math">
+<span class="eq">pip install ramp-llm</span>
+<span class="eq">ramp doctor      # can this machine run it?</span>
+<span class="eq">ramp             # start it</span>
+</div>
 </div>
 
-<footer>
-  RAMP is MIT-licensed ·
-  <a href="https://github.com/shivapreetham/resource-aware-model-proxy">github.com/shivapreetham/resource-aware-model-proxy</a> ·
-  <a href="https://pypi.org/project/ramp-llm/">pypi.org/project/ramp-llm</a>
-</footer>
+<p>There is no configuration file. RAMP finds your models, measures your RAM and
+GPU and builds the ladder itself. If you want to watch it work without
+downloading anything, <code>ramp demo</code> runs the whole daemon against a mock
+backend, and <code>ramp stress</code> fills memory so you can watch the tier drop
+in real time.</p>
 
-</div>
+<p>I still haven&rsquo;t finished the assistant I was originally building. But my
+machine hasn&rsquo;t frozen since, and I no longer pick my model based on the worst
+thing that might happen this afternoon &mdash; which was the actual thing I
+wanted all along.</p>
+
+<p class="byline">RAMP is MIT-licensed and on PyPI as <code>ramp-llm</code>.
+Issues, measurements and disagreement all welcome.</p>
+
+</article>
+
 </body>
 </html>

@@ -170,7 +170,7 @@ one is worse than useless:
 - **Low disk blocks upgrades** rather than causing downgrades — a smaller model
   frees no disk, so disk gates rather than triggers.
 
-📖 **[docs/CONCEPTS.md](docs/CONCEPTS.md)** works through the mechanics: what
+**[docs/CONCEPTS.md](docs/CONCEPTS.md)** works through the mechanics: what
 actually consumes memory when an LLM runs, the KV-cache arithmetic behind that
 table, and the control theory that keeps the ladder from oscillating.
 
