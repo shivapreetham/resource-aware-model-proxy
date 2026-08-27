@@ -139,6 +139,25 @@ with outbound links.
 
 ---
 
+## Where the blog lives
+
+`docs/index.html` is a standalone copy of the post. Turn it into a live page:
+
+**Settings → Pages → Source: "Deploy from a branch" → Branch: `main`, folder
+`/docs` → Save.**
+
+It appears at `https://shivapreetham.github.io/resource-aware-model-proxy/`
+within a minute or two. `docs/.nojekyll` is there so GitHub serves the file
+as written instead of running it through Jekyll.
+
+Own URL, no paywall, no ads, and it sits beside the code - which is what you
+want when the post *is* the argument for the project. Add the same URL to the
+repo's "Website" field.
+
+Cross-post afterwards to [dev.to](https://dev.to) with a canonical link back
+to that URL, so the traffic aggregates rather than splitting. Avoid Medium:
+its interstitials and paywall prompts cost credibility on HN specifically.
+
 ## Sequencing
 
 1. **Push and check CI is green.** Three of my releases went out red before the

@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Elastic Local LLMs — RAMP</title>
+<meta name="description" content="Why local LLMs share a computer badly: the KV-cache arithmetic behind VRAM pressure becoming RAM pressure, and a daemon that resizes the model instead of freezing the machine.">
+<meta name="author" content="Shivapreetham">
+<link rel="canonical" href="https://shivapreetham.github.io/resource-aware-model-proxy/">
+
+<meta property="og:type" content="article">
+<meta property="og:title" content="I gave my model more context and my GPU got emptier">
+<meta property="og:description" content="An OOM killed my laptop while building a local-LLM assistant. Chasing the numbers led to a daemon that resizes the model instead of freezing the machine.">
+<meta property="og:url" content="https://shivapreetham.github.io/resource-aware-model-proxy/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="I gave my model more context and my GPU got emptier">
+<meta name="twitter:description" content="An OOM killed my laptop while building a local-LLM assistant. Chasing the numbers led to a daemon that resizes the model instead of freezing the machine.">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#127898;</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
+<style>
+html { margin: 0; }
+body { margin: 0; }
+
+  :root {
+    --paper:    #FBFAF9;
+    --raised:   #FFFFFF;
+    --sunk:     #F1EEEC;
+    --ink:      #1B1917;
+    --ink-soft: #6B625C;
+    --rule:     #E2DCD8;
+    --rule-firm:#C7BEB8;
+    --accent:   #9E2B32;
+    --accent-soft: rgba(158, 43, 50, 0.09);
+    --serif: "Newsreader", Georgia, "Times New Roman", serif;
+    --mono:  "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:    #14120F;
+      --raised:   #1D1A17;
+      --sunk:     #211D19;
+      --ink:      #EDE7E1;
+      --ink-soft: #A2968D;
+      --rule:     #322C27;
+      --rule-firm:#4A423B;
+      --accent:   #E8737A;
+      --accent-soft: rgba(232, 115, 122, 0.13);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:    #14120F;
+    --raised:   #1D1A17;
+    --sunk:     #211D19;
+    --ink:      #EDE7E1;
+    --ink-soft: #A2968D;
+    --rule:     #322C27;
+    --rule-firm:#4A423B;
+    --accent:   #E8737A;
+    --accent-soft: rgba(232, 115, 122, 0.13);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 19px;
+    line-height: 1.62;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 24px 120px; }
+
+  header.top { padding: 76px 0 40px; }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 20px;
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(2.3rem, 5.6vw, 3.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.021em;
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 1.28rem;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 0 0 28px;
+  }
+
+  .byline {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    padding-top: 20px;
+    border-top: 1px solid var(--rule-firm);
+  }
+
+  h2 {
+    font-weight: 600;
+    font-size: 1.72rem;
+    letter-spacing: -0.014em;
+    line-height: 1.2;
+    margin: 60px 0 18px;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-weight: 600;
+    font-size: 1.2rem;
+    margin: 38px 0 12px;
+  }
+
+  p { margin: 0 0 21px; }
+
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  strong { font-weight: 600; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.82em;
+    background: var(--sunk);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.62;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 2px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 0 0 24px;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+
+  blockquote {
+    margin: 34px 0;
+    padding: 4px 0 4px 24px;
+    border-left: 3px solid var(--accent);
+    font-size: 1.3rem;
+    line-height: 1.42;
+    font-style: italic;
+    color: var(--ink);
+  }
+  blockquote p:last-child { margin-bottom: 0; }
+
+  .scroll { overflow-x: auto; margin: 0 0 26px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 400px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    background: var(--raised);
+  }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding-bottom: 8px;
+  }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+  th {
+    font-weight: 500;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule-firm);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; }
+  tr.hi td { background: var(--accent-soft); }
+
+  figure {
+    margin: 34px 0;
+    padding: 22px 22px 14px;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+  }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    margin-top: 14px;
+    padding-top: 11px;
+    border-top: 1px solid var(--rule);
+  }
+  .s-lab { font-family: "JetBrains Mono", monospace; font-size: 11.5px; fill: currentColor; }
+  .s-mut { font-family: "JetBrains Mono", monospace; font-size: 10.5px; fill: var(--ink-soft); }
+  .s-hd  { font-family: "Newsreader", serif; font-size: 14px; font-weight: 600; fill: currentColor; }
+
+  .math {
+    margin: 26px 0;
+    padding: 20px 24px;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 1.9;
+    overflow-x: auto;
+  }
+  .math .eq { display: block; white-space: pre; }
+  .math .where {
+    display: block;
+    margin-top: 12px;
+    padding-top: 11px;
+    border-top: 1px solid var(--rule);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: var(--ink-soft);
+    white-space: pre;
+  }
+  .math var { font-style: italic; color: var(--accent); }
+  .math .cmt { color: var(--ink-soft); }
+
+  .cta {
+    margin: 52px 0 0;
+    padding: 26px 28px;
+    background: var(--raised);
+    border: 1px solid var(--rule-firm);
+    border-radius: 2px;
+  }
+  .cta p:last-child { margin-bottom: 0; }
+  .cta pre { margin-bottom: 14px; }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule-firm);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">Local LLMs · Memory</p>
+  <h1>I gave my model more context and my GPU got <em>emptier</em></h1>
+  <p class="standfirst">
+    I set out to build an assistant, killed my laptop instead, and ended up
+    writing a daemon that resizes the model rather than freezing the machine.
+  </p>
+  <p class="byline">Measured on 16 GB RAM · RTX 5060 Laptop 8 GB · Qwen2.5 and Llama 3.1</p>
+</header>
+
+<p>
+  I was not trying to build a memory manager. I was building an assistant on
+  top of a local model, and one afternoon the machine simply stopped. Out of
+  memory. The cursor stopped moving, Ollama died, and I lost the session I had
+  been working in. Nothing crashed gracefully; the whole desktop just went
+  under and stayed there for a minute.
+</p>
+
+<p>
+  <strong>If you run models locally, you have had some version of this
+  afternoon.</strong> The fix everyone reaches for is to pick a smaller model
+  and stop thinking about it — which works, and costs you a worse assistant
+  every hour of every day to prevent something that happens occasionally. The
+  alternative is to keep the big model and accept that your machine is
+  periodically unusable.
+</p>
+
+<p>
+  Both options seemed wrong for the same reason: they are one-time decisions
+  about a constraint that changes minute to minute. So before writing anything,
+  I went looking for where the cliff actually sits. The first measurement
+  contradicted my mental model entirely.
+</p>
+
+<h2>The measurement that made no sense</h2>
+
+<p>
+  I loaded Llama 3.1 8B on an 8 GB card three times, changing only the context
+  length, and watched free VRAM after each load.
+</p>
+
+<div class="scroll">
+  <table>
+    <caption>Measured — free VRAM after loading Llama 3.1 8B</caption>
+    <thead><tr><th>Context</th><th class="num">Free VRAM</th></tr></thead>
+    <tbody>
+      <tr><td>default</td><td class="num">2,516 MiB</td></tr>
+      <tr><td>32,768</td><td class="num">1,018 MiB</td></tr>
+      <tr class="hi"><td>40,960</td><td class="num">1,702 MiB</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p>
+  Look at the last row. I asked for <em>more</em> context — more KV cache, more
+  memory — and got <strong>684 MiB of VRAM back</strong>. That is not how
+  memory works.
+</p>
+
+<p>
+  The explanation is in the other number I wasn't watching. System RAM had
+  dropped to 1,509 MB. The KV cache at 40k tokens no longer fit on the card, so
+  the runtime quietly moved layers onto the CPU. Doing that <em>freed</em> VRAM
+  and consumed RAM instead.
+</p>
+
+<blockquote>
+  <p>VRAM pressure had silently become RAM pressure. Nothing announced it.</p>
+</blockquote>
+
+<h3>The arithmetic behind it</h3>
+
+<p>
+  This is entirely predictable once you count the KV cache, which most capacity
+  planning ignores. Every generated token stores a key and a value vector in
+  every layer, and that store grows linearly with context length:
+</p>
+
+<div class="math">
+<span class="eq">kv_bytes_per_token = 2 · <var>n_layers</var> · <var>n_kv_heads</var> · <var>head_dim</var> · <var>bytes_per_element</var></span>
+<span class="where">2                  both a key and a value are cached
+n_layers           transformer blocks, each caching independently
+n_kv_heads         attention heads sharing a KV projection (GQA)
+head_dim           width of one head
+bytes_per_element  2 for fp16</span>
+</div>
+
+<p>
+  For Llama 3.1 8B — 32 layers, 8 KV heads, head dimension 128, fp16 — that is
+  <strong>128 KiB per token</strong>. So the full 40,960-token window costs:
+</p>
+
+<div class="math">
+<span class="eq">2 · 32 · 8 · 128 · 2      = 131,072 bytes   <span class="cmt">≈ 128 KiB / token</span>
+128 KiB · 40,960 tokens  = 5.0 GiB       <span class="cmt">KV cache alone</span>
+5.0 GiB + 4.9 GiB        = 9.9 GiB       <span class="cmt">+ Q4 weights</span>
+                          &gt; 8.0 GiB       <span class="cmt">card capacity</span></span>
+</div>
+
+<p>
+  The cache alone exceeds the weights. Nothing was mysterious about that
+  measurement: the request simply did not fit, and the runtime resolved the
+  overflow the only way it could — by moving layers into system RAM. The
+  surprise was only that it happened silently, and that the resource which
+  <em>looked</em> healthier afterwards was the one under pressure.
+</p>
+
+<figure>
+  <svg viewBox="0 0 660 250" role="img" aria-label="At a small context the model and its KV cache fit in VRAM. At a large context the KV cache no longer fits, so the runtime moves layers to system RAM: VRAM usage falls while RAM usage rises.">
+    <text class="s-hd" x="20" y="22">4k context</text>
+    <text class="s-hd" x="370" y="22">40k context</text>
+
+    <rect x="20" y="38" width="150" height="150" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text class="s-mut" x="95" y="205" text-anchor="middle">GPU (8 GB)</text>
+    <rect x="26" y="112" width="138" height="70" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1"/>
+    <text class="s-lab" x="95" y="152" text-anchor="middle" fill="var(--accent)">weights</text>
+    <rect x="26" y="82" width="138" height="28" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="3 2"/>
+    <text class="s-lab" x="95" y="101" text-anchor="middle">KV cache</text>
+
+    <rect x="196" y="38" width="120" height="150" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text class="s-mut" x="256" y="205" text-anchor="middle">system RAM</text>
+    <text class="s-mut" x="256" y="118" text-anchor="middle">(free)</text>
+
+    <line x1="340" y1="30" x2="340" y2="215" stroke="var(--rule-firm)" stroke-width="1"/>
+
+    <rect x="370" y="38" width="150" height="150" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text class="s-mut" x="445" y="205" text-anchor="middle">GPU (8 GB)</text>
+    <rect x="376" y="130" width="138" height="52" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1"/>
+    <text class="s-lab" x="445" y="161" text-anchor="middle" fill="var(--accent)">some weights</text>
+    <text class="s-mut" x="445" y="112" text-anchor="middle">more free!</text>
+
+    <rect x="546" y="38" width="94" height="150" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+    <text class="s-mut" x="593" y="205" text-anchor="middle">system RAM</text>
+    <rect x="551" y="70" width="84" height="112" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1"/>
+    <text class="s-lab" x="593" y="120" text-anchor="middle" fill="var(--accent)">spilled</text>
+    <text class="s-lab" x="593" y="136" text-anchor="middle" fill="var(--accent)">layers</text>
+
+    <path d="M 520 105 Q 535 88 549 100" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+    <polygon points="549,100 541,97 545,105" fill="var(--accent)"/>
+
+    <text class="s-mut" x="20" y="238">Ask for more context, and the shortage moves house rather than announcing itself.</text>
+  </svg>
+  <figcaption>
+    The runtime is already doing elastic memory management — badly, silently,
+    and without telling anyone which resource is actually short.
+  </figcaption>
+</figure>
+
+<p>
+  This is the thing that makes local LLMs so annoying to live with. The
+  shortage doesn't stay put. Any tool watching only one resource will draw the
+  wrong conclusion, and any human tuning by feel is chasing a number that moves
+  when they touch it.
+</p>
+
+<h2>Choosing continuously instead of once</h2>
+
+<p>
+  If the constraint changes minute to minute, the model size should too. I
+  built <strong>RAMP</strong> — a small daemon that sits in front of Ollama or
+  llama.cpp, watches RAM, VRAM and disk every few seconds, and moves the loaded
+  model up and down a ladder.
+</p>
+
+<p>
+  Open Chrome with forty tabs and your 7B quietly becomes a 3B. Close them and
+  the 7B comes back. Your tools never know: it speaks the OpenAI API, so the
+  integration is one line.
+</p>
+
+<pre><code>- client = OpenAI(base_url="http://localhost:11434/v1")   # to Ollama
++ client = OpenAI(base_url="http://localhost:8090/v1")    # through RAMP</code></pre>
+
+<figure>
+  <svg viewBox="0 0 660 260" role="img" aria-label="A trace of free memory over time with two separated thresholds. Memory falls below the lower line and the model steps down two tiers; when memory recovers past the upper line and stays there, it climbs back.">
+    <rect x="56" y="74" width="560" height="76" fill="var(--accent-soft)"/>
+    <line x1="56" y1="212" x2="626" y2="212" stroke="currentColor" stroke-width="1"/>
+    <line x1="56" y1="34" x2="56" y2="212" stroke="currentColor" stroke-width="1"/>
+    <text class="s-mut" x="56" y="232">time</text>
+    <text class="s-mut" x="8" y="50">free</text>
+    <text class="s-mut" x="8" y="63">memory</text>
+
+    <line x1="56" y1="74" x2="616" y2="74" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4"/>
+    <text class="s-mut" x="620" y="71">climb back above here</text>
+    <line x1="56" y1="150" x2="616" y2="150" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="5 4"/>
+    <text class="s-mut" x="620" y="154" fill="var(--accent)">step down below here</text>
+    <text class="s-mut" x="336" y="116" text-anchor="middle">no action in between</text>
+
+    <polyline points="66,56 120,62 168,104 208,158 250,186 300,192 348,188 392,150 436,96 480,66 530,58 580,60 616,62"
+              fill="none" stroke="currentColor" stroke-width="2"/>
+
+    <circle cx="250" cy="186" r="4.5" fill="var(--accent)"/>
+    <text class="s-lab" x="250" y="252" text-anchor="middle" fill="var(--accent)">7B -&gt; 3B -&gt; 1.5B</text>
+    <line x1="250" y1="186" x2="250" y2="238" stroke="var(--accent)" stroke-width="1" stroke-dasharray="2 3"/>
+
+    <circle cx="530" cy="58" r="4.5" fill="currentColor"/>
+    <text class="s-lab" x="530" y="252" text-anchor="middle">back to 7B</text>
+    <line x1="530" y1="58" x2="530" y2="238" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3"/>
+  </svg>
+  <figcaption>
+    Two thresholds, not one. Dropping is quick; climbing back needs sustained
+    headroom. A single line would make it flap up and down forever.
+  </figcaption>
+</figure>
+
+<p>
+  The asymmetry is the whole design. Dropping late means your machine freezes;
+  climbing back late costs a slightly worse answer for another minute. So it
+  drops in about six seconds and takes over a minute to come back.
+</p>
+
+<h3>The decision rule</h3>
+
+<p>
+  A tier is admissible when its footprint plus a reserve fits every budget it
+  touches. Both resources must clear independently — a tier that fits RAM but
+  not VRAM is not a candidate:
+</p>
+
+<div class="math">
+<span class="eq">fits(<var>t</var>) ⟺ ram(<var>t</var>) + <var>M</var> ≤ <var>R</var>     and     vram(<var>t</var>) + <var>M</var><sub>v</sub> ≤ <var>V</var></span>
+<span class="where">M, Mv   reserve kept free for the rest of the machine
+R, V    free RAM and free VRAM</span>
+</div>
+
+<p>
+  The subtlety is which <var>R</var> to use. Comparing against currently-free
+  memory makes upgrades impossible, because the memory an upgrade needs is
+  occupied by the model it replaces. The budget is therefore counted
+  <em>post-swap</em>:
+</p>
+
+<div class="math">
+<span class="eq"><var>R</var>′ = <var>R</var> + ram(<var>current</var>)      <span class="cmt">what is free once the current tier unloads</span></span>
+</div>
+
+<p>
+  And because the controller's own actions move the signal it reads, a single
+  threshold oscillates: unloading frees memory, which justifies reloading,
+  which consumes it again. Two separated thresholds and a time requirement
+  break that loop:
+</p>
+
+<div class="math">
+<span class="eq">down  ⟸  <var>R</var> &lt; <var>M</var>                       for <var>k</var> consecutive samples
+up    ⟸  ram(<var>t</var>) + <var>M</var> + <var>E</var> ≤ <var>R</var>′<sub>ema</sub>       sustained for <var>T</var> seconds</span>
+<span class="where">E   extra headroom, so a promoted tier does not immediately
+    consume the margin that justified promoting it
+k   2 samples (~6s)      T   90s      E   ~1 GB
+R'ema   smoothed, so a momentary dip cannot cancel a recovery</span>
+</div>
+
+<p>
+  Downgrades read the raw signal and upgrades read a smoothed one. That is
+  deliberate: reacting late to pressure is expensive, reacting late to
+  recovery is not.
+</p>
+
+<h2>What it costs</h2>
+
+<div class="scroll">
+  <table>
+    <caption>Measured</caption>
+    <thead><tr><th>Thing</th><th class="num">Cost</th></tr></thead>
+    <tbody>
+      <tr><td>A swap, warm</td><td class="num">1.9 s</td></tr>
+      <tr><td>A swap, cold (first load)</td><td class="num">16.5 s</td></tr>
+      <tr><td>RAMP's own memory</td><td class="num">65 MB</td></tr>
+      <tr><td>RAMP's own CPU, per hour idle</td><td class="num">~1 s</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p>
+  Two seconds is the number that makes the approach viable at all; swapping was
+  assumed to be too expensive to do casually. It is not, because the operating
+  system keeps recently-read weights in its page cache. A useful consequence
+  follows: when pressure is severe enough to evict that cache, it is the
+  <em>upgrade</em> that becomes slow, never the downgrade. Cost asymmetry
+  aligns with urgency asymmetry.
+</p>
+
+<p>
+  And since "the memory watchdog is the leak" is the obvious retort, RAMP
+  reports its own footprint. You can check rather than trust me.
+</p>
+
+<h2>What testing did not catch</h2>
+
+<p>
+  The suite stands at 166 tests. None of the three defects below was caught by
+  it — each surfaced only under a running system, and each is a category worth
+  naming.
+</p>
+
+<h3>A controller that misread its own transient state</h3>
+
+<p>
+  A pinned tier reverted itself two seconds after being set. Mid-swap, the old
+  backend is stopped before the current-tier variable is updated, so for a
+  window the daemon appears crashed <em>to itself</em>. Crash recovery fired
+  and restored the tier the swap was replacing. The fix is to treat a
+  transition in progress as a state no decision may be made about; the general
+  lesson is that any system observing itself must distinguish "broken" from
+  "mid-change."
+</p>
+
+<p>
+  Worth recording: the first regression test for it passed against the broken
+  code, because it did not wait long enough for the spurious recovery to land.
+  A regression test not yet watched to fail is not evidence of anything.
+</p>
+
+<h3>Cleanup that only ran on the happy path</h3>
+
+<p>
+  RAMP can occupy the port a model server already uses and relocate that server
+  one port over, so every client routes through it unmodified. Restoration ran
+  on clean exit — and only on clean exit. Killing the daemon rather than
+  stopping it skipped the handler entirely and left nothing on port 11434. The
+  arrangement is now journalled to disk when engaged, so it survives a hard
+  kill and can be repaired on the next run.
+</p>
+
+<h3>An estimate conservative enough to be wrong</h3>
+
+<p>
+  The most instructive of the three, because it produced no error at all. A
+  GPU-resident model was charged its weights against system RAM <em>and</em>
+  VRAM — double-counting a quantity that exists once. A 5 GB model was billed
+  6.7 GB of RAM it never touched, so the top of the ladder required 8.8 GB free
+  on a 16 GB machine and was unreachable in practice. The daemon declined to
+  use the best model installed and reported itself healthy throughout.
+  Over-conservative estimates are not the safe direction; they are simply a
+  different way to be wrong.
+</p>
+
+<blockquote>
+  <p>
+    A green suite on one machine proved to be the weakest signal available.
+    Continuous integration caught a defect already declared absent.
+  </p>
+</blockquote>
+
+<h2>Scope and coverage</h2>
+
+<p>
+  RAMP is verified end to end against Ollama: detection, relocation, the full
+  pressure cycle, crash recovery, and restoration. The llama.cpp and LM Studio
+  paths run through the same policy and lifecycle code and are covered by unit
+  tests including every refusal branch, but have not had an integration run
+  against those binaries. The design anticipates that gap rather than papering
+  over it — where RAMP cannot positively identify a runtime, or cannot
+  reconstruct the command needed to restart it, it declines and changes
+  nothing. Stopping a server you cannot restart is the one outcome worth
+  engineering against absolutely.
+</p>
+
+<p>
+  The open measurement is swap <em>frequency</em> over a multi-hour workload.
+  Per-swap cost is characterised (1.9 s warm, 16.5 s cold); the rate at which
+  swaps occur is a function of the machine and the work being done on it, so
+  quoting a figure from one laptop would be worth less than instrumenting it.
+  <code>ramp status</code> reports swaps per hour, cumulative time spent
+  swapping, and per-tier occupancy directly — the claim is checkable rather
+  than asserted.
+</p>
+
+<p>
+  Reports from other hardware are the most useful contribution right now,
+  particularly from anyone running llama.cpp or LM Studio.
+</p>
+
+<h2>Running it</h2>
+
+<div class="cta">
+<pre><code>pip install ramp-llm
+ramp demo      # no models downloaded - watch it switch
+ramp watch     # in a second terminal
+ramp stress    # in a third: fill memory, watch it drop</code></pre>
+<p>
+  The demo runs against stand-in servers that announce which size answered, so
+  the behaviour is visible in plain text with nothing to download. With Ollama
+  installed, plain <code>ramp</code> finds your models and builds the ladder
+  itself. If you have ever lost an afternoon to an OOM on your own machine,
+  this was written for you.
+</p>
+</div>
+
+<footer>
+  RAMP is MIT-licensed ·
+  <a href="https://github.com/shivapreetham/resource-aware-model-proxy">github.com/shivapreetham/resource-aware-model-proxy</a> ·
+  <a href="https://pypi.org/project/ramp-llm/">pypi.org/project/ramp-llm</a>
+</footer>
+
+</div>
+</body>
+</html>
