@@ -1,9 +1,11 @@
 # Try RAMP
 
-RAMP makes a local AI model **shrink when your computer runs low on memory,
-and grow back when it frees up** — so your assistant never freezes your
-machine, and you never have to choose between "good but heavy" and "light
-but dumb."
+Run a local AI model and you eventually meet the same afternoon: the machine
+freezes, the model server dies, and you lose what you were doing. The usual
+cure is to permanently switch to a smaller, worse model.
+
+**RAMP makes the model shrink instead of the machine freezing** — and grow back
+when memory frees up. You stop choosing.
 
 There are two demos here:
 

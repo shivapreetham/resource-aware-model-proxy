@@ -7,14 +7,41 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
-RAMP is a daemon that sits in front of Ollama or llama.cpp and **swaps your
-model for a smaller one when memory gets tight, then back when it frees up.**
+You know the afternoon. A decent model is loaded, you open a browser, and the
+machine stops — frozen cursor, model server dead, the work you had open gone
+with it. So you drop to a smaller model permanently, and spend every hour with
+worse answers to prevent something that happens occasionally.
 
-- Open Chrome with 40 tabs → your 7B quietly becomes a 3B.
-- Close them → a minute later the 7B is back.
-- You never pick a model size again, and nothing gets OOM-killed.
+**RAMP removes that choice.** It watches RAM, VRAM and disk continuously and
+moves your model down a ladder the moment memory gets tight — then back up when
+it frees again.
 
-It speaks the OpenAI API, so your existing tools work unchanged.
+```
+memory gets tight   →   7B becomes 3B in ~6s      you keep working
+memory comes back   →   7B returns after ~90s     you keep the good model
+```
+
+Your tools never find out. RAMP speaks the OpenAI API, so pointing them at it
+is a one-line change — or no change at all, if you let it take the port your
+model server already uses.
+
+### It is more careful than it looks
+
+Anything that moves models around under you has to earn trust, so:
+
+- **It tells you what it costs.** ~2 s per swap, ~65 MB resident — and it
+  reports its own footprint through `ramp status`, because *"the memory
+  watchdog is the leak"* is a fair thing to suspect.
+- **It won't thrash.** Separate thresholds for dropping and climbing, plus a
+  rate limit, so it can't oscillate on a signal its own actions move.
+- **It survives being killed.** If RAMP relocated your model server and is then
+  hard-killed, `ramp restore` puts everything back. The arrangement is
+  journalled to disk, not held in memory.
+- **It refuses rather than guesses.** If it can't identify a runtime, or can't
+  work out how to restart what it's about to stop, it declines and changes
+  nothing.
+- **Every number here was measured**, on a 16 GB laptop with an 8 GB card, and
+  is reproducible with `ramp status` on yours.
 
 ---
 
@@ -117,22 +144,35 @@ RAMP builds the ladder from whatever you have. For llama.cpp instead, see
 
 ## How it works
 
-RAMP watches **RAM, VRAM and free disk** every few seconds and moves between
-models on its own:
+Here is the measurement that shaped the whole design. Loading Llama 3.1 on an
+8 GB card, changing only the context length:
 
-- **Drops fast** when memory gets tight — hesitating is what freezes machines.
-- **Climbs back slowly**, only once memory has been comfortably free for a
-  while, so it can't flap up and down.
-- **Never mid-request**: in-flight generations finish, new ones wait ~2s.
-- **Low disk blocks upgrades** rather than causing downgrades, since a smaller
-  model frees no disk.
+| Context | Free VRAM after load |
+|---|---|
+| default | 2,516 MiB |
+| 32,768 | 1,018 MiB |
+| **40,960** | **1,702 MiB** ← *went up?* |
 
-A swap costs about **2 seconds** (measured), and RAMP itself uses about
-**65 MB** — which it reports, so you can check rather than trust.
+More context, and the GPU reports **more** free memory. The KV cache had
+outgrown the card — 5 GiB of cache against 4.9 GiB of weights — so the runtime
+quietly moved layers into system RAM. RAM fell to 1.5 GB while VRAM *looked*
+healthier.
 
-📖 **[docs/CONCEPTS.md](docs/CONCEPTS.md)** explains the mechanics properly:
-what actually consumes memory when an LLM runs, why VRAM pressure silently
-becomes RAM pressure, and the control theory behind the policy.
+> **The shortage doesn't stay put. It moves house, and nothing announces it.**
+
+Which is why RAMP watches all three resources together, and why watching only
+one is worse than useless:
+
+- **Drops fast** under pressure — hesitating is what freezes machines.
+- **Climbs back slowly**, only after sustained headroom, so it can't flap on a
+  signal its own actions move.
+- **Never mid-request**: in-flight generations finish; new ones wait ~2s.
+- **Low disk blocks upgrades** rather than causing downgrades — a smaller model
+  frees no disk, so disk gates rather than triggers.
+
+📖 **[docs/CONCEPTS.md](docs/CONCEPTS.md)** works through the mechanics: what
+actually consumes memory when an LLM runs, the KV-cache arithmetic behind that
+table, and the control theory that keeps the ladder from oscillating.
 
 ## Monitoring
 
