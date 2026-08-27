@@ -33,13 +33,18 @@ The audience that actually has this problem. Lead with the pain, not the tool.
 
 **Title:**
 
-> I got tired of choosing between a 7B that OOMs my laptop and a 3B that's dumb, so I made the model resize itself
+> My PC hung, Ollama crashed, and I lost an afternoon to an OOM. So I made the model resize itself instead.
 
 **Body:**
 
-> Every local setup makes you pick a model size once and live with it. Pick big
-> and your machine chokes when you open a browser; pick small and you get worse
-> answers all day for a problem that happens ten minutes a day.
+> I wasn't trying to build this. I was building an assistant on a local model
+> when my machine just stopped — OOM, cursor frozen, Ollama dead, session gone.
+> If you run models locally you've had that afternoon.
+>
+> The usual fix is to drop to a smaller model permanently: you pay for a worse
+> assistant every hour to prevent something that happens occasionally. That
+> felt like the wrong trade, because it's a one-time decision about a
+> constraint that changes minute to minute.
 >
 > So I built a small daemon that watches RAM, VRAM and disk and moves between
 > models automatically. Open Chrome with 40 tabs → your 7B becomes a 3B. Close
@@ -95,11 +100,19 @@ Different audience — recruiters and peers, not users. Tell the story, not the
 feature list. Put the link in the first comment; the algorithm buries posts
 with outbound links.
 
-> My laptop has 16 GB of RAM. A good local AI model wants most of it. So every
-> day I was choosing between an assistant that's smart and one that lets me
-> work.
+> Last week my laptop stopped responding. Out of memory. Cursor frozen, the
+> model server dead, the work I had open gone with it.
 >
-> I spent a week making that choice go away.
+> I wasn't building anything to do with memory — I was building an assistant on
+> a local AI model. The machine simply couldn't hold both that and everything
+> else I had open.
+>
+> The standard fix is to permanently downgrade to a smaller model: you accept a
+> worse assistant every hour of every day to prevent something that happens
+> occasionally. That struck me as the wrong trade, because it's a one-time
+> decision about a constraint that changes minute to minute.
+>
+> So I spent a week making the choice unnecessary instead.
 >
 > While measuring where the cliff actually was, I found something that didn't
 > make sense: I gave the model a *bigger* context window and my GPU reported
