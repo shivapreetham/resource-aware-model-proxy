@@ -232,7 +232,7 @@ settles it.
 
 ```bash
 pytest -q                        # 155 tests
-ruff check src tests scripts
+ruff check src tests
 ```
 
 ## License

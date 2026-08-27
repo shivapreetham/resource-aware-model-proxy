@@ -7,8 +7,10 @@ build/
 dist/
 .pytest_cache/
 
-# Local assistant context (kept out of the published repo)
+# Personal working files, not part of the project
 CLAUDE.md
+LAUNCH.md
+docs/LAUNCH.md
 
 # Runtime / local assets
 ramp-backend.log

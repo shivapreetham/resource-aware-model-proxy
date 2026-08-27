@@ -40,7 +40,7 @@ jobs:
         run: |
           pip install -e ".[dev]"
           pytest -q
-          ruff check src tests scripts
+          ruff check src tests
 
       - run: pip install build && python -m build
 

@@ -18,15 +18,15 @@ fake OpenAI servers that tag their replies with the tier name, so the whole
 daemon can be exercised end-to-end in seconds.
 
 ```bash
-ramp -c examples/ramp.mock.yaml
+ramp demo
 curl http://127.0.0.1:8090/ramp/status
-python scripts/stress_ram.py --mb 4000 --hold-s 60   # watch it downgrade
+ramp stress                                          # watch it downgrade
 ```
 
 ## Before you open a PR
 
 ```bash
-ruff check src tests scripts
+ruff check src tests
 pytest -q
 ```
 
