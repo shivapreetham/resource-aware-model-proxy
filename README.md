@@ -45,7 +45,13 @@ Anything that moves models around under you has to earn trust, so:
 
 ---
 
+**[Read the write-up](https://shivapreetham.github.io/resource-aware-model-proxy/)**
+— the measurement that shaped the design, the KV-cache arithmetic behind it,
+and the three bugs a green 166-test suite missed entirely.
+
 ## Install
+
+From [PyPI](https://pypi.org/project/ramp-llm/):
 
 ```bash
 pip install ramp-llm
